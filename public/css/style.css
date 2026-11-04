@@ -13,6 +13,8 @@
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+/* 必须显式声明：.modal-mask / .order-bar 等带 display:flex，会覆盖浏览器默认的 hidden 隐藏行为 */
+[hidden] { display: none !important; }
 html, body { height: 100%; }
 body {
   font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
