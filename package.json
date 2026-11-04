@@ -1,0 +1,13 @@
+{
+  "name": "diancan-web",
+  "version": "1.0.0",
+  "description": "家常点菜网页版（点菜 + 评价 + 主人管理）",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "license": "MIT"
+}
