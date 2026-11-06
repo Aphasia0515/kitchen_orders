@@ -1,0 +1,210 @@
+{
+  "config": {
+    "adminPassword": "030515jj"
+  },
+  "tokens": {
+    "t9d0d4b73e8e12c02": 1793967939745,
+    "t4886d2e32c2fd6a9": 1793968439732
+  },
+  "userTokens": {
+    "uf472bafe365b3d4d": {
+      "uid": "umw4yh8g5d000",
+      "ts": 1793968439727
+    }
+  },
+  "users": [
+    {
+      "id": "umw4yh8g5d000",
+      "nickname": "Aphasia",
+      "pw": "0a9271c0e1e44ef4678fc88d571fed874ae86f8a8b21d090f46f0ed0d06aeb00",
+      "createdAt": 1792227600000
+    }
+  ],
+  "dishes": [
+    {
+      "id": "d1",
+      "name": "清炖牛肋条",
+      "emoji": "🥩",
+      "price": 68,
+      "category": "荤菜",
+      "desc": "",
+      "status": "on",
+      "sort": 0
+    },
+    {
+      "id": "d2",
+      "name": "土豆排骨炖粉条",
+      "emoji": "🍲",
+      "price": 42,
+      "category": "荤菜",
+      "desc": "排骨、四季豆、土豆、粉条",
+      "status": "on",
+      "sort": 1
+    },
+    {
+      "id": "d3",
+      "name": "可乐鸡翅",
+      "emoji": "🍗",
+      "price": 32,
+      "category": "荤菜",
+      "desc": "",
+      "status": "on",
+      "sort": 2
+    },
+    {
+      "id": "d4",
+      "name": "糖醋里脊",
+      "emoji": "🍖",
+      "price": 38,
+      "category": "荤菜",
+      "desc": "",
+      "status": "on",
+      "sort": 3
+    },
+    {
+      "id": "d5",
+      "name": "番茄炒蛋",
+      "emoji": "🍅",
+      "price": 16,
+      "category": "素菜",
+      "desc": "",
+      "status": "on",
+      "sort": 4
+    },
+    {
+      "id": "d6",
+      "name": "手抓饼",
+      "emoji": "🫓",
+      "price": 15,
+      "category": "主食",
+      "desc": "鸡蛋、火腿肠、青椒土豆丝、沙拉酱",
+      "status": "on",
+      "sort": 5
+    },
+    {
+      "id": "d7",
+      "name": "酱油蛋炒饭",
+      "emoji": "🍚",
+      "price": 18,
+      "category": "主食",
+      "desc": "虾滑、午餐肉、鸡蛋、隔夜米饭",
+      "status": "on",
+      "sort": 6
+    }
+  ],
+  "orders": [
+    {
+      "id": "oh1",
+      "uid": "umw4yh8g5d000",
+      "nickname": "Aphasia",
+      "items": [
+        {
+          "dishId": "d1",
+          "name": "清炖牛肋条",
+          "emoji": "🥩",
+          "price": 68,
+          "count": 1
+        }
+      ],
+      "total": 68,
+      "mealDate": "2026-10-17",
+      "mealTime": "18:00",
+      "guests": 1,
+      "avoid": [],
+      "note": "",
+      "status": "completed",
+      "rejectReason": "",
+      "createdAt": 1792231200000,
+      "updatedAt": 1792231200000
+    },
+    {
+      "id": "oh2",
+      "uid": "umw4yh8g5d000",
+      "nickname": "Aphasia",
+      "items": [
+        {
+          "dishId": "d6",
+          "name": "手抓饼",
+          "emoji": "🫓",
+          "price": 15,
+          "count": 1
+        }
+      ],
+      "total": 15,
+      "mealDate": "2026-10-18",
+      "mealTime": "18:30",
+      "guests": 1,
+      "avoid": [],
+      "note": "",
+      "status": "completed",
+      "rejectReason": "",
+      "createdAt": 1792319400000,
+      "updatedAt": 1792319400000
+    },
+    {
+      "id": "oh3",
+      "uid": "umw4yh8g5d000",
+      "nickname": "Aphasia",
+      "items": [
+        {
+          "dishId": "d2",
+          "name": "土豆排骨炖粉条",
+          "emoji": "🍲",
+          "price": 42,
+          "count": 1
+        }
+      ],
+      "total": 42,
+      "mealDate": "2026-11-01",
+      "mealTime": "11:00",
+      "guests": 1,
+      "avoid": [],
+      "note": "",
+      "status": "completed",
+      "rejectReason": "",
+      "createdAt": 1793502000000,
+      "updatedAt": 1793502000000
+    }
+  ],
+  "reviews": [
+    {
+      "id": "rh1",
+      "orderId": "oh1",
+      "uid": "umw4yh8g5d000",
+      "nickname": "Aphasia",
+      "dishId": "d1",
+      "dishName": "清炖牛肋条",
+      "emoji": "🥩",
+      "rating": 2,
+      "content": "肉炖的还行，但蘸料不行，且炖的汤但汤如清水。",
+      "reply": "",
+      "createdAt": 1792231200000
+    },
+    {
+      "id": "rh2",
+      "orderId": "oh2",
+      "uid": "umw4yh8g5d000",
+      "nickname": "Aphasia",
+      "dishId": "d6",
+      "dishName": "手抓饼",
+      "emoji": "🫓",
+      "rating": 5,
+      "content": "非常好吃，青椒土豆丝绝了",
+      "reply": "",
+      "createdAt": 1792319400000
+    },
+    {
+      "id": "rh3",
+      "orderId": "oh3",
+      "uid": "umw4yh8g5d000",
+      "nickname": "Aphasia",
+      "dishId": "d2",
+      "dishName": "土豆排骨炖粉条",
+      "emoji": "🍲",
+      "rating": 5,
+      "content": "非常入味好吃",
+      "reply": "",
+      "createdAt": 1793502000000
+    }
+  ]
+}

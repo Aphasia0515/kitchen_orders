@@ -16,6 +16,7 @@
       <header class="topbar">
         <div class="shop-name">🍳 jiojio厨房</div>
         <div class="shop-sub">勾选想吃的菜，约个时间，我来做</div>
+        <a class="user-entry" id="user-entry">登录 / 注册</a>
       </header>
       <div class="page-body" id="menu-list"></div>
       <!-- 底部结算条 -->
@@ -26,6 +27,15 @@
         </div>
         <button class="btn btn-primary" id="go-order">预约下单</button>
       </div>
+    </section>
+
+    <!-- ============ 菜品详情（点菜单里的「评分 / 暂无评价 ›」进入） ============ -->
+    <section class="view" id="view-dish" hidden>
+      <header class="topbar">
+        <div class="shop-name">菜品详情</div>
+        <a class="admin-exit" href="#menu">← 返回菜单</a>
+      </header>
+      <div class="page-body" id="dish-body"></div>
     </section>
 
     <!-- ============ 我的订单 ============ -->

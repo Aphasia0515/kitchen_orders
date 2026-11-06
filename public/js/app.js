@@ -1,7 +1,7 @@
 /* ============================================================
- * 家常点菜网页版 - 前端逻辑（原生 JS，无框架）
- * 用户：勾选菜单 → 预约时间 → 下单
- * 店主：密码登录 → 管理订单/菜品（新上线·在售·已下线）/ 回复评价
+ * jiojio厨房点菜网页版 - 前端逻辑（原生 JS，无框架）
+ * 客人：登录 → 勾选菜单 → 预约时间 → 下单 → 按菜写评价
+ * 店主：管理页密码登录 → 管理订单/菜品（新上线·在售·已下线）/ 回复评价
  * ============================================================ */
 
 /* ---------------- 小工具 ---------------- */
@@ -20,6 +20,7 @@ function toast(msg) {
 
 async function api(path, opts = {}) {
   const headers = { 'Content-Type': 'application/json' }
+  if (store.userToken) headers['x-user-token'] = store.userToken
   if (store.adminToken) headers['x-admin-token'] = store.adminToken
   const res = await fetch(path, {
     method: opts.method || 'GET',
@@ -27,7 +28,11 @@ async function api(path, opts = {}) {
     body: opts.body ? JSON.stringify(opts.body) : undefined
   })
   const data = await res.json()
-  if (!data.ok) throw new Error(data.msg || '请求失败')
+  if (!data.ok) {
+    // 登录态失效：清掉本地身份，提示重新登录
+    if (res.status === 401 && opts.onAuthExpired) opts.onAuthExpired()
+    throw new Error(data.msg || '请求失败')
+  }
   return data
 }
 
@@ -40,17 +45,96 @@ $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeM
 
 /* ---------------- 本地身份 ---------------- */
 const store = {
-  get uid() { return localStorage.getItem('dc_uid') || '' },
-  set uid(v) { localStorage.setItem('dc_uid', v) },
-  get nickname() { return localStorage.getItem('dc_nick') || '' },
-  set nickname(v) { localStorage.setItem('dc_nick', v) },
+  get userToken() { return localStorage.getItem('dc_token') || '' },
+  set userToken(v) { localStorage.setItem('dc_token', v) },
+  get user() { try { return JSON.parse(localStorage.getItem('dc_user')) || null } catch { return null } },
+  set user(v) { localStorage.setItem('dc_user', JSON.stringify(v)) },
   get adminToken() { return localStorage.getItem('dc_admin') || '' },
   set adminToken(v) { localStorage.setItem('dc_admin', v) }
 }
-if (!store.uid) store.uid = 'u' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36)
+
+/* ---------------- 登录态 UI ---------------- */
+function updateLoginUI() {
+  const u = store.user
+  $('#user-entry').innerHTML = u
+    ? `<span class="user-avatar">${esc(u.nickname.slice(0, 1))}</span>${esc(u.nickname)}`
+    : '登录 / 注册'
+}
+
+$('#user-entry').addEventListener('click', () => {
+  if (store.user) showUserMenu()
+  else showLoginModal()
+})
+
+function showUserMenu() {
+  openModal(`
+    <div class="modal-title">我的账号 <button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="card" style="text-align:center">
+      <div class="user-avatar big">${esc(store.user.nickname.slice(0, 1))}</div>
+      <div class="user-menu-name">${esc(store.user.nickname)}</div>
+      <button class="btn btn-ghost btn-sm" id="logout-btn" style="margin-top:14px;color:var(--red)">退出登录</button>
+    </div>
+  `)
+  $('#logout-btn').addEventListener('click', async () => {
+    try { await api('/api/auth/logout', { method: 'POST' }) } catch (e) { /* 忽略 */ }
+    store.userToken = ''
+    store.user = null
+    updateLoginUI()
+    closeModal()
+    toast('已退出')
+    switchView('menu')
+  })
+}
+
+/* ---------- 登录 / 注册弹层 ---------- */
+function showLoginModal(afterLogin) {
+  let mode = 'login'
+  openModal(`
+    <div class="modal-title" id="auth-title">客人登录 <button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="card">
+      <label class="field-label">称呼（昵称）</label>
+      <input class="input" id="auth-nick" maxlength="20" placeholder="名字或外号">
+      <label class="field-label">密码</label>
+      <input class="input" id="auth-pwd" type="password" maxlength="32" placeholder="至少 4 位">
+      <button class="btn btn-primary btn-block" id="auth-submit">登录</button>
+      <a class="login-mode-link" id="auth-toggle">没有账号？注册一个</a>
+      <div class="login-tip">店主请在底部「管理」页用管理密码登录</div>
+    </div>
+  `)
+
+  $('#auth-toggle').addEventListener('click', () => {
+    mode = mode === 'login' ? 'register' : 'login'
+    $('#auth-title').firstChild.textContent = mode === 'login' ? '客人登录 ' : '注册新账号 '
+    $('#auth-submit').textContent = mode === 'login' ? '登录' : '注册并登录'
+    $('#auth-toggle').textContent = mode === 'login' ? '没有账号？注册一个' : '已有账号？去登录'
+  })
+  $('#auth-pwd').addEventListener('keydown', e => { if (e.key === 'Enter') doAuth() })
+  $('#auth-submit').addEventListener('click', doAuth)
+
+  async function doAuth() {
+    const nickname = $('#auth-nick').value.trim()
+    const password = $('#auth-pwd').value
+    if (!nickname) return toast('填一下称呼')
+    if (password.length < 4) return toast('密码至少 4 位')
+    const btn = $('#auth-submit')
+    btn.disabled = true
+    try {
+      const data = await api('/api/auth/' + mode, { method: 'POST', body: { nickname, password } })
+      store.userToken = data.token
+      store.user = data.user
+      updateLoginUI()
+      closeModal()
+      toast(mode === 'login' ? '欢迎回来，' + data.user.nickname : '注册成功，欢迎 ' + data.user.nickname)
+      if (afterLogin) afterLogin()
+    } catch (e) {
+      btn.disabled = false
+      toast(e.message)
+    }
+  }
+}
 
 /* ---------------- 视图切换 ---------------- */
-const VIEWS = ['menu', 'orders', 'reviews', 'admin']
+const VIEWS = ['menu', 'orders', 'reviews', 'admin', 'dish']
 let refreshTimer = null
 
 function switchView(name) {
@@ -116,6 +200,11 @@ function renderMenu() {
             <div class="dish-name">${esc(d.name)}${d.status === 'new' ? '<span class="badge-new">新上线</span>' : ''}</div>
             ${d.desc ? `<div class="dish-desc">材料：${esc(d.desc)}</div>` : ''}
             <div class="dish-price">${d.price}</div>
+            <div class="dish-entry" data-act="dish-detail">
+              ${d.rating ? `<span class="dish-rating">★${d.rating.avg}·${d.rating.count}</span>` : '<span class="dish-rating none">暂无评价</span>'}
+              <span class="dish-entry-txt">看评价</span>
+              <span class="dish-chev">›</span>
+            </div>
           </div>
           ${count ? `
           <div class="qty">
@@ -138,6 +227,14 @@ function renderMenu() {
 }
 
 $('#menu-list').addEventListener('click', e => {
+  // 点评分/「暂无评价」入口 → 进菜品详情页（不触发行勾选）
+  const entry = e.target.closest('[data-act="dish-detail"]')
+  if (entry) {
+    const row = entry.closest('.dish-row')
+    if (row) location.hash = 'dish/' + encodeURIComponent(row.dataset.id)
+    return
+  }
+
   const row = e.target.closest('.dish-row')
   if (!row) return
   const id = row.dataset.id
@@ -164,9 +261,13 @@ $('#menu-list').addEventListener('click', e => {
 })
 
 $('#clear-sel').addEventListener('click', () => { selected.clear(); renderMenu() })
-$('#go-order').addEventListener('click', showOrderModal)
+$('#go-order').addEventListener('click', () => {
+  // 下单必须登录
+  if (!store.user) return showLoginModal(() => showOrderModal())
+  showOrderModal()
+})
 
-/* ---------- 预约下单弹层 ---------- */
+/* ---------- 预约下单弹层（称呼取自登录账号） ---------- */
 function showOrderModal() {
   const { sum } = selTotal()
   const items = []
@@ -196,9 +297,6 @@ function showOrderModal() {
 
       <label class="field-label">备注（人数、忌口、过敏、想说的都可以写）</label>
       <textarea class="input" id="order-note" rows="2" placeholder="比如：3 个人吃，不吃香菜"></textarea>
-
-      <label class="field-label">你的称呼</label>
-      <input class="input" id="order-nick" placeholder="名字或外号" value="${esc(store.nickname)}" maxlength="20">
     </div>
 
     <div class="modal-actions">
@@ -215,8 +313,6 @@ function showOrderModal() {
   })
 
   $('#submit-order').addEventListener('click', async () => {
-    const nickname = $('#order-nick').value.trim()
-    if (!nickname) return toast('填一下你的称呼')
     const mealTime = $('#meal-time').value
     if (!mealTime) return toast('选一下预约时间')
 
@@ -226,19 +322,16 @@ function showOrderModal() {
     const btn = $('#submit-order')
     btn.disabled = true
     try {
-      const data = await api('/api/order', {
+      await api('/api/order', {
         method: 'POST',
         body: {
-          uid: store.uid,
-          nickname,
           items,
           mealDate: $('#chips-date .on')?.dataset.v || 'today',
           mealTime,
           note: $('#order-note').value.trim()
-        }
+        },
+        onAuthExpired() { store.userToken = ''; store.user = null; updateLoginUI() }
       })
-      store.uid = data.uid
-      store.nickname = nickname
       selected.clear()
       closeModal()
       toast('预约成功，等店主确认')
@@ -262,8 +355,20 @@ const STATUS = {
 }
 
 async function loadMyOrders() {
+  if (!store.user) {
+    $('#orders-list').innerHTML = `
+      <div class="card login-hint">
+        <div style="font-size:34px">🔐</div>
+        <div style="margin-top:8px;font-weight:600">登录后才能看你的订单</div>
+        <div class="stat-sub" style="margin-top:4px">下单和写评价都需要登录</div>
+        <button class="btn btn-primary" style="margin-top:14px" data-act="login">登录 / 注册</button>
+      </div>`
+    return
+  }
   try {
-    const data = await api('/api/myorders?uid=' + encodeURIComponent(store.uid))
+    const data = await api('/api/myorders', {
+      onAuthExpired() { store.userToken = ''; store.user = null; updateLoginUI(); loadMyOrders() }
+    })
     const list = data.list
     if (!list.length) {
       $('#orders-list').innerHTML = `<div class="empty">还没有订单<br>去「菜单」勾几道菜吧</div>`
@@ -284,7 +389,7 @@ async function loadMyOrders() {
           <div class="order-meta">🕒 预约 ${mealText}${o.note ? '<br>💬 ' + esc(o.note) : ''}${o.status === 'rejected' && o.rejectReason ? '<br>店主留言：' + esc(o.rejectReason) : ''}</div>
           <div class="order-actions">
             ${o.status === 'pending' ? `<button class="btn btn-ghost btn-sm" data-act="cancel" data-id="${o.id}">取消</button>` : ''}
-            ${o.status === 'completed' && !o.reviewed ? `<button class="btn btn-primary btn-sm" data-act="review" data-id="${o.id}">评价</button>` : ''}
+            ${o.canReview ? `<button class="btn btn-primary btn-sm" data-act="review" data-id="${o.id}">评价</button>` : ''}
           </div>
         </div>`
     }).join('')
@@ -294,79 +399,115 @@ async function loadMyOrders() {
 $('#orders-list').addEventListener('click', e => {
   const btn = e.target.closest('[data-act]')
   if (!btn) return
+  if (btn.dataset.act === 'login') return showLoginModal(() => loadMyOrders())
   if (btn.dataset.act === 'cancel') cancelOrder(btn.dataset.id)
-  if (btn.dataset.act === 'review') showReviewModal(btn.dataset.id)
+  if (btn.dataset.act === 'review') {
+    // 找到当前列表里的订单对象，传给评价弹层（需要 items / reviewedIds）
+    api('/api/myorders', {
+      onAuthExpired() { store.userToken = ''; store.user = null; updateLoginUI() }
+    }).then(data => {
+      const o = data.list.find(x => x.id === btn.dataset.id)
+      if (o) showReviewModal(o)
+    }).catch(e2 => toast(e2.message))
+  }
 })
 
 async function cancelOrder(id) {
   if (!confirm('确定取消这个预约？')) return
   try {
-    await api(`/api/order/${id}/cancel`, { method: 'POST', body: { uid: store.uid } })
+    await api(`/api/order/${id}/cancel`, { method: 'POST' })
     toast('已取消')
     loadMyOrders()
   } catch (e) { toast(e.message) }
 }
 
-/* ---------- 写评价 ---------- */
-const RATING_TAGS = ['好吃', '下次还想吃', '份量足', '咸了', '淡了']
+/* ============================================================
+ * 写评价（按菜打分，一菜一评）
+ * ============================================================ */
+function showReviewModal(order) {
+  // 只显示还没评价过的菜
+  const toRate = order.items.filter(i => !(order.reviewedIds || []).includes(i.dishId))
+  if (!toRate.length) return toast('这单的菜都评价过啦')
 
-function showReviewModal(orderId) {
   openModal(`
-    <div class="modal-title">评价这单 <button class="modal-close" onclick="closeModal()">✕</button></div>
-    <div class="card" style="text-align:center">
-      <div id="rating-stars" style="font-size:36px;cursor:pointer;letter-spacing:6px">
-        ${[1, 2, 3, 4, 5].map(i => `<span data-v="${i}" class="rstar" style="color:${i <= 5 ? '#FF8F1F' : '#E5E7EB'}">★</span>`).join('')}
-      </div>
-      <div class="stat-sub" id="rating-text" style="margin-top:4px">很好吃</div>
-    </div>
-    <div class="card">
-      <div class="chips" id="chips-rtags">
-        ${RATING_TAGS.map(t => `<button class="chip" data-v="${t}">${t}</button>`).join('')}
-      </div>
-      <textarea class="input" id="review-content" rows="3" placeholder="想说点什么～（选填）"></textarea>
-    </div>
+    <div class="modal-title">逐道菜评价 <button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="stat-sub" style="margin-bottom:8px">给每道菜打个分（默认 5 星），想说的话选填</div>
+    ${toRate.map(i => `
+      <div class="card rate-row" data-dish="${i.dishId}">
+        <div class="rate-dish">
+          <span class="dish-name">${esc(i.emoji)} ${esc(i.name)}</span>
+          <span class="rate-stars">${[1, 2, 3, 4, 5].map(n => `<span class="on" data-v="${n}">★</span>`).join('')}</span>
+        </div>
+        <input class="input rate-comment" maxlength="200" placeholder="这道菜想说的话（选填）">
+      </div>`).join('')}
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal()">算了</button>
       <button class="btn btn-primary" id="submit-review">提交评价</button>
     </div>
   `)
 
-  let rating = 5
-  $('#rating-stars').addEventListener('click', e => {
-    const s = e.target.closest('.rstar')
-    if (!s) return
-    rating = parseInt(s.dataset.v)
-    $('#rating-stars').querySelectorAll('.rstar').forEach(x =>
-      x.style.color = parseInt(x.dataset.v) <= rating ? '#FF8F1F' : '#E5E7EB')
-    $('#rating-text').textContent = ['', '不咋地', '一般', '还行', '好吃', '很好吃'][rating]
-  })
-  $('#chips-rtags').addEventListener('click', e => {
-    const chip = e.target.closest('.chip')
-    if (chip) chip.classList.toggle('on')
+  // 打星
+  $('#modal-card').querySelectorAll('.rate-row').forEach(row => {
+    row.querySelector('.rate-stars').addEventListener('click', e => {
+      const s = e.target.closest('[data-v]')
+      if (!s) return
+      const v = parseInt(s.dataset.v)
+      row.querySelectorAll('.rate-stars span').forEach(x =>
+        x.classList.toggle('on', parseInt(x.dataset.v) <= v))
+    })
   })
 
   $('#submit-review').addEventListener('click', async () => {
-    const tags = []
-    $('#chips-rtags').querySelectorAll('.chip.on').forEach(c => tags.push(c.dataset.v))
+    const ratings = []
+    $('#modal-card').querySelectorAll('.rate-row').forEach(row => {
+      const stars = row.querySelectorAll('.rate-stars .on').length || 5
+      ratings.push({
+        dishId: row.dataset.dish,
+        rating: stars,
+        content: row.querySelector('.rate-comment').value.trim()
+      })
+    })
+    const btn = $('#submit-review')
+    btn.disabled = true
     try {
       await api('/api/review', {
         method: 'POST',
-        body: {
-          uid: store.uid, orderId, rating, tags,
-          content: $('#review-content').value.trim(),
-          nickname: store.nickname
-        }
+        body: { orderId: order.id, ratings },
+        onAuthExpired() { store.userToken = ''; store.user = null; updateLoginUI() }
       })
       closeModal()
       toast('感谢评价！')
       loadMyOrders()
-    } catch (e) { toast(e.message) }
+    } catch (e) {
+      btn.disabled = false
+      toast(e.message)
+    }
   })
 }
 
 /* ============================================================
- * 评价列表
+ * 评价
  * ============================================================ */
+function reviewCardHTML(r, withReplyBtn) {
+  return `
+    <div class="card">
+      <div class="review-head">
+        <span class="review-name">${esc(r.nickname)}</span>
+        <span class="review-time">${r.timeText}</span>
+      </div>
+      <div style="margin-top:6px">
+        ${r.dishName ? `<span class="review-dish">${esc(r.emoji || '')} ${esc(r.dishName)}</span>` : ''}
+        <span class="stars" style="font-size:15px">${starsHTML(r.rating)}</span>
+      </div>
+      ${r.content ? `<div class="review-content">${esc(r.content)}</div>` : ''}
+      ${r.reply ? `<div class="review-reply">${esc(r.reply)}</div>` : ''}
+      ${withReplyBtn ? `
+      <div class="order-actions">
+        <button class="btn btn-ghost btn-sm" data-act="reply" data-id="${r.id}">${r.reply ? '修改回复' : '回复'}</button>
+      </div>` : ''}
+    </div>`
+}
+
 async function loadReviews() {
   try {
     const data = await api('/api/reviews')
@@ -383,21 +524,64 @@ async function loadReviews() {
         </div>
       </div>`
     if (!list.length) {
-      html += `<div class="empty">还没有评价</div>`
+      html += `<div class="empty">还没有评价<br>吃完记得来打分呀</div>`
     } else {
-      html += list.map(r => `
-        <div class="card">
-          <div class="review-head">
-            <span class="review-name">${esc(r.nickname)}</span>
-            <span class="review-time">${r.timeText}</span>
-          </div>
-          <div class="stars" style="font-size:15px">${starsHTML(r.rating)}</div>
-          ${r.content ? `<div class="review-content">${esc(r.content)}</div>` : ''}
-          ${r.tags.length ? `<div class="review-tags">${r.tags.map(t => `<span>${esc(t)}</span>`).join('')}</div>` : ''}
-          ${r.reply ? `<div class="review-reply">${esc(r.reply)}</div>` : ''}
-        </div>`).join('')
+      html += list.map(r => reviewCardHTML(r, false)).join('')
     }
     $('#reviews-body').innerHTML = html
+  } catch (e) { toast(e.message) }
+}
+
+/* ---------- 菜品详情页（每道菜都能点进去看评价） ---------- */
+function showDishView(id) {
+  VIEWS.forEach(v => { $('#view-' + v).hidden = v !== 'dish' })
+  // 详情页是菜单的子页，底部「菜单」保持高亮
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === 'menu'))
+  clearInterval(refreshTimer)
+  loadDishDetail(id)
+}
+
+async function loadDishDetail(id) {
+  const body = $('#dish-body')
+  body.innerHTML = '<div class="empty">加载中…</div>'
+  try {
+    // 直接打开/刷新 #dish/xx 时菜单还没加载过，先补一次
+    if (!menuDishes.length) {
+      const m = await api('/api/menu')
+      menuDishes = m.dishes
+    }
+    const d = menuDishes.find(x => x.id === id)
+    if (!d) {
+      body.innerHTML = '<div class="empty">菜品不存在或已下线<br><a class="back-link" href="#menu">← 返回菜单</a></div>'
+      return
+    }
+    const { stat, list } = await api('/api/dish-reviews?id=' + encodeURIComponent(id))
+
+    let html = `
+      <div class="card dish-hero">
+        <div class="dish-hero-emoji">${esc(d.emoji)}</div>
+        <div class="dish-hero-info">
+          <div class="dish-hero-name">${esc(d.name)}${d.status === 'new' ? '<span class="badge-new">新上线</span>' : ''}</div>
+          <div class="dish-hero-sub">${esc(d.category)} · <b>¥${d.price}</b></div>
+          ${d.desc ? `<div class="dish-hero-desc">材料：${esc(d.desc)}</div>` : ''}
+        </div>
+      </div>
+      <div class="card stat-card">
+        <div style="text-align:center">
+          <div class="stat-avg">${stat ? stat.avg : '—'}</div>
+          <div class="stat-sub">${esc(d.name)}的评分</div>
+        </div>
+        <div>
+          <div class="stars">${starsHTML(stat ? parseFloat(stat.avg) : 0)}</div>
+          <div class="stat-sub" style="margin-top:6px">${stat ? stat.count + ' 人评过' : '还没有评价'}</div>
+        </div>
+      </div>`
+    if (!list.length) {
+      html += '<div class="empty" style="padding:30px 0">这道菜还没有评价<br>吃完记得来打分呀</div>'
+    } else {
+      html += list.map(r => reviewCardHTML(r, false)).join('')
+    }
+    body.innerHTML = html
   } catch (e) { toast(e.message) }
 }
 
@@ -526,7 +710,7 @@ $('#admin-body').addEventListener('click', async e => {
   if (act === 'reply') {
     try {
       const r = (await api('/api/reviews')).list.find(x => x.id === id)
-      const reply = prompt('回复内容（留空则清除）：', r?.reply || '')
+      const reply = prompt(`回复「${r?.dishName || ''}」的评价（留空则清除）：`, r?.reply || '')
       if (reply === null) return
       await api(`/api/admin/review/${id}/reply`, { method: 'POST', body: { reply } })
       loadAdminReviews()
@@ -651,20 +835,7 @@ async function loadAdminReviews() {
     if (!data.list.length) {
       html = `<div class="empty">还没有评价</div>`
     } else {
-      html = data.list.map(r => `
-        <div class="card">
-          <div class="review-head">
-            <span class="review-name">${esc(r.nickname)}</span>
-            <span class="review-time">${r.timeText}</span>
-          </div>
-          <div class="stars" style="font-size:15px">${starsHTML(r.rating)}</div>
-          ${r.content ? `<div class="review-content">${esc(r.content)}</div>` : ''}
-          ${r.tags.length ? `<div class="review-tags">${r.tags.map(t => `<span>${esc(t)}</span>`).join('')}</div>` : ''}
-          ${r.reply ? `<div class="review-reply">${esc(r.reply)}</div>` : ''}
-          <div class="order-actions">
-            <button class="btn btn-ghost btn-sm" data-act="reply" data-id="${r.id}">${r.reply ? '修改回复' : '回复'}</button>
-          </div>
-        </div>`).join('')
+      html = data.list.map(r => reviewCardHTML(r, true)).join('')
     }
     $('#admin-body').innerHTML = html
   } catch (e) { toast(e.message) }
@@ -674,7 +845,12 @@ async function loadAdminReviews() {
 window.closeModal = closeModal  // 供弹层内联按钮使用
 
 function boot() {
+  updateLoginUI()
   const hash = location.hash.replace('#', '')
+  // 菜品详情页是带参数 hash（#dish/d1），由 hashchange 统一驱动，不走 switchView 避免重复加载
+  if (hash.startsWith('dish')) {
+    return showDishView(hash.startsWith('dish/') ? decodeURIComponent(hash.slice(5)) : '')
+  }
   switchView(VIEWS.includes(hash) ? hash : 'menu')
 }
 window.addEventListener('hashchange', boot)

@@ -241,6 +241,72 @@ body {
 .modal-actions { display: flex; gap: 12px; margin-top: 20px; }
 .modal-actions .btn { flex: 1; }
 
+/* ---------- 顶栏登录入口 ---------- */
+.user-entry {
+  position: absolute; right: 16px; top: 20px;
+  color: var(--green-deep); font-size: 13px; font-weight: 600; text-decoration: none;
+  background: #F2FBF6; border: 1px solid #DFF5E9;
+  padding: 5px 12px 5px 6px; border-radius: 16px;
+  display: flex; align-items: center; gap: 6px; max-width: 40%;
+}
+.user-entry span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-avatar {
+  width: 24px; height: 24px; flex: none; border-radius: 50%;
+  background: var(--green); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700;
+}
+.user-avatar.big { width: 52px; height: 52px; font-size: 22px; margin: 0 auto; }
+.user-menu-name { font-weight: 700; font-size: 17px; margin-top: 10px; }
+
+/* ---------- 菜品评分角标 ---------- */
+.dish-rating {
+  font-size: 11px; font-weight: 700; color: var(--orange);
+  background: #FFF7E8; border-radius: 5px; padding: 1px 6px; flex: none;
+  cursor: pointer;
+}
+
+/* ---------- 菜品详情入口 / 详情页 ---------- */
+.dish-entry {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-top: 5px; cursor: pointer; flex: none;
+}
+.dish-entry-txt { font-size: 12px; color: var(--muted); }
+.dish-chev { color: var(--muted); font-size: 16px; line-height: 1; }
+.dish-rating.none { color: var(--muted); background: #F0F1F2; }
+.back-link { color: var(--green); text-decoration: none; }
+
+.dish-hero { display: flex; align-items: center; gap: 16px; }
+.dish-hero-emoji {
+  width: 64px; height: 64px; flex: none; font-size: 40px;
+  text-align: center; line-height: 64px;
+  background: #F5F6F7; border-radius: 12px;
+}
+.dish-hero-info { flex: 1; min-width: 0; }
+.dish-hero-name { font-weight: 700; font-size: 18px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dish-hero-sub { color: var(--muted); font-size: 14px; margin-top: 4px; }
+.dish-hero-sub b { color: var(--ink); font-size: 16px; }
+.dish-hero-desc { color: var(--muted); font-size: 13px; margin-top: 4px; line-height: 1.6; }
+
+/* ---------- 按菜评价 ---------- */
+.rate-row { padding: 14px 16px; }
+.rate-dish { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.rate-dish .dish-name { flex: 1; min-width: 0; }
+.rate-stars { font-size: 22px; color: #E5E7EB; letter-spacing: 2px; cursor: pointer; flex: none; }
+.rate-stars .on { color: var(--orange); }
+.rate-row .rate-comment { margin-top: 10px; }
+
+.review-dish {
+  display: inline-block; font-size: 12px; font-weight: 700;
+  color: var(--green-deep); background: #F2FBF6; border-radius: 6px;
+  padding: 2px 8px; margin-right: 8px; vertical-align: 2px;
+}
+
+/* ---------- 登录弹层 ---------- */
+.login-mode-link { display: block; text-align: center; margin-top: 14px; color: var(--green); font-size: 14px; cursor: pointer; }
+.login-tip { color: var(--muted); font-size: 12px; text-align: center; margin-top: 12px; }
+.login-hint { text-align: center; padding: 40px 16px; }
+
 /* ---------- Toast / 空态 ---------- */
 .toast {
   position: fixed; top: 16%; left: 50%; transform: translateX(-50%);

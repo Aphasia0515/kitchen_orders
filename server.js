@@ -1,7 +1,12 @@
 /**
- * 家常点菜网页版 - 服务端
+ * jiojio厨房点菜网页版 - 服务端
  * 零依赖（只用 Node 内置模块），数据存 data/db.json
  * 运行：node server.js   （默认端口 3000，可用环境变量 PORT 修改）
+ *
+ * 身份体系（两套独立）：
+ *   店主：管理密码登录 → x-admin-token（管理订单/菜品/评价回复）
+ *   客人：昵称+密码注册/登录 → x-user-token（下单/取消/写评价）
+ * 浏览菜单和看评价不需要登录。
  */
 const http = require('http')
 const fs = require('fs')
@@ -18,22 +23,22 @@ const DB_FILE = path.join(DATA_DIR, 'db.json')
 const uid4 = () => crypto.randomBytes(8).toString('hex')
 const sha256 = s => crypto.createHash('sha256').update(String(s)).digest('hex')
 const nowTs = () => Date.now()
-
-function todayStr(d = new Date()) {
-  const p = n => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
-}
+const TOKEN_TTL = 7 * 24 * 3600 * 1000
+const PW_SALT = 'jiojio_kitchen_2026'
+const pwHash = pwd => sha256(PW_SALT + String(pwd))
 
 /* ---------------- 数据库（JSON 文件） ---------------- */
 let db = null
 
 function defaultDB() {
   return {
-    config: { adminPassword: sha256(uid4()).slice(0, 10), adminToken: '' },
-    tokens: {},          // adminToken -> createdAt
+    config: { adminPassword: sha256(uid4()).slice(0, 10) },
+    tokens: {},          // 店主 token -> createdAt
+    userTokens: {},      // 客人 token -> { uid, ts }
+    users: [],           // { id, nickname, pw, createdAt }
     dishes: [],
     orders: [],
-    reviews: []
+    reviews: []          // { id, orderId, uid, nickname, dishId, dishName, emoji, rating, content, reply, createdAt }
   }
 }
 
@@ -50,6 +55,13 @@ function loadDB() {
           delete d.today
         }
       })
+      // 兼容新增集合
+      if (!db.users) db.users = []
+      if (!db.userTokens) db.userTokens = {}
+      // 兼容旧版整单评价（无 dishId）：标记为整单
+      db.reviews.forEach(r => {
+        if (!r.dishId) { r.dishId = ''; r.dishName = r.dishName || '整单'; r.emoji = r.emoji || '🍽️' }
+      })
     } catch (e) {
       console.error('db.json 解析失败，使用全新数据', e)
       db = defaultDB()
@@ -59,8 +71,8 @@ function loadDB() {
     seedDishes()
     saveDB()
     console.log('========================================')
-    console.log('首次运行：已生成 12 道示例菜')
-    console.log('主人管理密码：' + db.config.adminPassword)
+    console.log('首次运行：已生成示例菜单')
+    console.log('店主管理密码：' + db.config.adminPassword)
     console.log('（也可在 data/db.json 的 config.adminPassword 里改）')
     console.log('========================================')
   }
@@ -97,10 +109,39 @@ function seedDishes() {
   }))
 }
 
-/* ---------------- 菜单逻辑 ---------------- */
+/* ---------------- 菜单与评分 ---------------- */
 // 用户可见的菜单：新上线 + 在售（已下线不显示）
 function menuDishes() {
   return db.dishes.filter(d => d.status !== 'off')
+}
+
+// 某道菜的评分统计（按菜评价聚合）
+function dishStat(dishId) {
+  const rs = db.reviews.filter(r => r.dishId === dishId)
+  if (!rs.length) return null
+  return {
+    avg: (rs.reduce((s, r) => s + r.rating, 0) / rs.length).toFixed(1),
+    count: rs.length
+  }
+}
+
+/* ---------------- 客人登录态 ---------------- */
+function issueUserToken(userId) {
+  const t = 'u' + uid4()
+  db.userTokens[t] = { uid: userId, ts: nowTs() }
+  // 顺手清理过期 token
+  for (const [k, v] of Object.entries(db.userTokens)) {
+    if (nowTs() - v.ts > TOKEN_TTL) delete db.userTokens[k]
+  }
+  saveDB()
+  return t
+}
+
+function getUser(req) {
+  const t = req.headers['x-user-token'] || ''
+  const info = t && db.userTokens[t]
+  if (!info || nowTs() - info.ts > TOKEN_TTL) return null
+  return db.users.find(u => u.id === info.uid) || null
 }
 
 /* ---------------- HTTP 基础 ---------------- */
@@ -158,14 +199,12 @@ function serveStatic(req, res, urlPath) {
 
 /* ---------------- 校验 ---------------- */
 function cleanOrderInput(body) {
-  const nickname = String(body.nickname || '').trim().slice(0, 20)
   const items = Array.isArray(body.items) ? body.items : []
   const mealDate = body.mealDate === 'tomorrow' ? 'tomorrow' : 'today'
   const mealTime = String(body.mealTime || '').slice(0, 5)
   const guests = Math.min(Math.max(parseInt(body.guests) || 1, 1), 20)
   const avoid = Array.isArray(body.avoid) ? body.avoid.slice(0, 8).map(s => String(s).slice(0, 20)) : []
   const note = String(body.note || '').trim().slice(0, 200)
-  if (!nickname) return { err: '先告诉我们怎么称呼你' }
   if (!items.length) return { err: '还没点菜呢' }
   if (!/^\d{1,2}:\d{2}$/.test(mealTime)) return { err: '选一下用餐时间' }
   const norm = []
@@ -175,7 +214,7 @@ function cleanOrderInput(body) {
     norm.push({ dishId: String(it.dishId), count })
   }
   if (!norm.length) return { err: '还没点菜呢' }
-  return { nickname, items: norm, mealDate, mealTime, guests, avoid, note }
+  return { items: norm, mealDate, mealTime, guests, avoid, note }
 }
 
 /* ---------------- API 路由 ---------------- */
@@ -183,16 +222,18 @@ async function handleAPI(req, res, urlObj) {
   const p = urlObj.pathname
   const q = urlObj.searchParams
   const body = ['POST', 'PUT', 'DELETE'].includes(req.method) ? await readBody(req) : {}
-  const adminToken = req.headers['x-admin-token'] || body.adminToken || ''
+  const adminToken = req.headers['x-admin-token'] || ''
 
   function isAdmin() {
-    return adminToken && db.tokens[adminToken] && nowTs() - db.tokens[adminToken] < 7 * 24 * 3600 * 1000
+    return adminToken && db.tokens[adminToken] && nowTs() - db.tokens[adminToken] < TOKEN_TTL
   }
   function orderView(o) {
-    const r = db.reviews.find(x => x.orderId === o.id)
+    const rvd = db.reviews.filter(r => r.orderId === o.id)
+    const reviewedIds = Array.from(new Set(rvd.map(r => r.dishId)))
     return Object.assign({}, o, {
       timeText: new Date(o.createdAt).toLocaleString('zh-CN', { hour12: false }),
-      reviewed: !!r
+      reviewedIds,
+      canReview: o.status === 'completed' && o.items.some(i => !reviewedIds.includes(i.dishId))
     })
   }
   function reviewView(r) {
@@ -201,19 +242,78 @@ async function handleAPI(req, res, urlObj) {
     })
   }
 
-  /* ---- 公开接口 ---- */
+  /* ---- 客人认证 ---- */
 
-  // 菜单
+  // 注册（注册即登录）
+  if (p === '/api/auth/register' && req.method === 'POST') {
+    const nickname = String(body.nickname || '').trim().slice(0, 20)
+    const password = String(body.password || '')
+    if (!nickname) return fail(res, 400, '先起一个称呼（昵称）')
+    if (db.users.some(u => u.nickname === nickname)) return fail(res, 400, '这个称呼已被使用，换一个试试')
+    if (password.length < 4) return fail(res, 400, '密码至少 4 位')
+    if (password.length > 32) return fail(res, 400, '密码最多 32 位')
+    const user = {
+      id: 'u' + Date.now().toString(36) + uid4().slice(0, 4),
+      nickname, pw: pwHash(password), createdAt: nowTs()
+    }
+    db.users.push(user)
+    return ok(res, { token: issueUserToken(user.id), user: { id: user.id, nickname: user.nickname } })
+  }
+
+  // 登录
+  if (p === '/api/auth/login' && req.method === 'POST') {
+    const nickname = String(body.nickname || '').trim()
+    const password = String(body.password || '')
+    const user = db.users.find(u => u.nickname === nickname)
+    if (!user || user.pw !== pwHash(password)) return fail(res, 401, '称呼或密码不对')
+    return ok(res, { token: issueUserToken(user.id), user: { id: user.id, nickname: user.nickname } })
+  }
+
+  // 登出
+  if (p === '/api/auth/logout' && req.method === 'POST') {
+    const t = req.headers['x-user-token'] || ''
+    if (t && db.userTokens[t]) { delete db.userTokens[t]; saveDB() }
+    return ok(res, {})
+  }
+
+  /* ---- 公开接口（无需登录） ---- */
+
+  // 菜单（含每道菜的评分统计）
   if (p === '/api/menu' && req.method === 'GET') {
     const dishes = menuDishes().map(d => ({
       id: d.id, name: d.name, emoji: d.emoji, price: d.price,
-      category: d.category, desc: d.desc, status: d.status
+      category: d.category, desc: d.desc, status: d.status,
+      rating: dishStat(d.id)
     }))
     return ok(res, { dishes })
   }
 
-  // 下单（价格由服务端重算，前端改不了）
+  // 某道菜的评价列表
+  if (p === '/api/dish-reviews' && req.method === 'GET') {
+    const id = q.get('id') || ''
+    const d = db.dishes.find(x => x.id === id)
+    if (!d) return fail(res, 404, '菜品不存在')
+    const list = db.reviews.filter(r => r.dishId === id)
+      .sort((a, b) => b.createdAt - a.createdAt).slice(0, 50).map(reviewView)
+    return ok(res, { dish: { id: d.id, name: d.name, emoji: d.emoji }, stat: dishStat(id), list })
+  }
+
+  // 评价列表 + 总统计
+  if (p === '/api/reviews' && req.method === 'GET') {
+    const all = db.reviews
+    const list = all.slice().sort((a, b) => b.createdAt - a.createdAt).slice(0, 50).map(reviewView)
+    const total = all.length
+    const avg = total ? (all.reduce((s, r) => s + r.rating, 0) / total).toFixed(1) : '0.0'
+    const good = all.filter(r => r.rating >= 4).length
+    return ok(res, { stat: { avg, total, goodRate: total ? Math.round(good / total * 100) : 0 }, list })
+  }
+
+  /* ---- 客人接口（需登录） ---- */
+
+  // 下单（必须登录；价格由服务端重算，前端改不了；称呼取自账号）
   if (p === '/api/order' && req.method === 'POST') {
+    const user = getUser(req)
+    if (!user) return fail(res, 401, '下单前先登录一下')
     const c = cleanOrderInput(body)
     if (c.err) return fail(res, 400, c.err)
     const menu = new Map(menuDishes().map(d => [d.id, d]))
@@ -227,8 +327,8 @@ async function handleAPI(req, res, urlObj) {
     }
     const order = {
       id: 'o' + Date.now().toString(36) + uid4().slice(0, 4),
-      uid: String(body.uid || '').slice(0, 40),
-      nickname: c.nickname,
+      uid: user.id,
+      nickname: user.nickname,
       items, total,
       mealDate: c.mealDate, mealTime: c.mealTime, guests: c.guests,
       avoid: c.avoid, note: c.note,
@@ -236,85 +336,88 @@ async function handleAPI(req, res, urlObj) {
       rejectReason: '',
       createdAt: nowTs(), updatedAt: nowTs()
     }
-    if (!order.uid) order.uid = uid4()
     db.orders.unshift(order)
     saveDB()
-    return ok(res, { order: orderView(order), uid: order.uid })
+    return ok(res, { order: orderView(order) })
   }
 
   // 我的订单
   if (p === '/api/myorders' && req.method === 'GET') {
-    const uid = q.get('uid') || ''
-    const list = db.orders.filter(o => o.uid === uid).slice(0, 50).map(orderView)
+    const user = getUser(req)
+    if (!user) return fail(res, 401, '登录后才能看订单')
+    const list = db.orders.filter(o => o.uid === user.id).slice(0, 50).map(orderView)
     return ok(res, { list })
   }
 
-  // 取消订单（只有本人 + 待接单状态）
+  // 取消订单（本人 + 待接单状态）
   if (p.match(/^\/api\/order\/[\w-]+\/cancel$/) && req.method === 'POST') {
+    const user = getUser(req)
+    if (!user) return fail(res, 401, '登录后才能取消订单')
     const id = p.split('/')[3]
     const o = db.orders.find(x => x.id === id)
     if (!o) return fail(res, 404, '订单不存在')
-    if (o.uid !== body.uid) return fail(res, 403, '只能取消自己的订单')
-    if (o.status !== 'pending') return fail(res, 400, '这个状态不能取消了，等主人看看吧')
+    if (o.uid !== user.id) return fail(res, 403, '只能取消自己的订单')
+    if (o.status !== 'pending') return fail(res, 400, '这个状态不能取消了，等店主看看吧')
     o.status = 'cancelled'
     o.updatedAt = nowTs()
     saveDB()
     return ok(res, { order: orderView(o) })
   }
 
-  // 写评价（只有已完成订单能评，一单一评）
+  // 按菜写评价：已完成订单，可逐菜打分；每道菜只能评一次（没评的菜下次还能补评）
   if (p === '/api/review' && req.method === 'POST') {
-    const { uid, orderId, rating, tags, content } = body
-    const o = db.orders.find(x => x.id === orderId)
+    const user = getUser(req)
+    if (!user) return fail(res, 401, '写评价前先登录一下')
+    const o = db.orders.find(x => x.id === body.orderId)
     if (!o) return fail(res, 404, '订单不存在')
-    if (o.uid !== uid) return fail(res, 403, '只能评价自己的订单')
+    if (o.uid !== user.id) return fail(res, 403, '只能评价自己的订单')
     if (o.status !== 'completed') return fail(res, 400, '吃上了才能评价哦')
-    if (db.reviews.some(r => r.orderId === orderId)) return fail(res, 400, '这单已经评价过啦')
-    const r = Math.min(Math.max(parseInt(rating) || 5, 1), 5)
-    const review = {
-      id: 'r' + Date.now().toString(36),
-      orderId, uid: o.uid,
-      nickname: String(body.nickname || o.nickname).slice(0, 20),
-      rating: r,
-      tags: Array.isArray(tags) ? tags.slice(0, 5).map(s => String(s).slice(0, 10)) : [],
-      content: String(content || '').trim().slice(0, 300),
-      reply: '',
-      createdAt: nowTs()
+
+    const ratings = Array.isArray(body.ratings) ? body.ratings : []
+    const already = new Set(db.reviews.filter(r => r.orderId === o.id).map(r => r.dishId))
+    const valid = []
+    for (const it of ratings) {
+      const dish = o.items.find(i => i.dishId === it.dishId)
+      if (!dish || already.has(dish.dishId)) continue
+      const rating = Math.min(Math.max(parseInt(it.rating) || 5, 1), 5)
+      valid.push({
+        dishId: dish.dishId, dishName: dish.name, emoji: dish.emoji,
+        rating, content: String(it.content || '').trim().slice(0, 200)
+      })
     }
-    db.reviews.unshift(review)
+    if (!valid.length) return fail(res, 400, '这单的菜都评价过啦')
+
+    for (const v of valid) {
+      db.reviews.unshift(Object.assign({
+        id: 'r' + Date.now().toString(36) + uid4().slice(0, 3),
+        orderId: o.id, uid: user.id, nickname: user.nickname,
+        reply: '', createdAt: nowTs()
+      }, v))
+    }
     saveDB()
-    return ok(res, { review: reviewView(review) })
+    return ok(res, { count: valid.length, reviews: db.reviews.filter(r => r.orderId === o.id).slice(0, 50).map(reviewView) })
   }
 
-  // 评价列表 + 统计
-  if (p === '/api/reviews' && req.method === 'GET') {
-    const list = db.reviews.slice(0, 50).map(reviewView)
-    const total = list.length
-    const avg = total ? (list.reduce((s, r) => s + r.rating, 0) / total).toFixed(1) : '0.0'
-    const good = list.filter(r => r.rating >= 4).length
-    return ok(res, { stat: { avg, total, goodRate: total ? Math.round(good / total * 100) : 0 }, list })
-  }
+  /* ---- 店主接口 ---- */
 
-  /* ---- 主人接口 ---- */
-
-  // 登录
+  // 店主登录
   if (p === '/api/admin/login' && req.method === 'POST') {
     if (String(body.password || '') !== db.config.adminPassword) {
-      return fail(res, 401, '密码不对，只有主人知道')
+      return fail(res, 401, '密码不对，只有店主知道')
     }
     const token = 't' + uid4()
     db.tokens[token] = nowTs()
     // 清理 7 天前的旧 token
     for (const [t, ts] of Object.entries(db.tokens)) {
-      if (nowTs() - ts > 7 * 24 * 3600 * 1000) delete db.tokens[t]
+      if (nowTs() - ts > TOKEN_TTL) delete db.tokens[t]
     }
     saveDB()
     return ok(res, { token })
   }
 
-  // 以下全部要求管理员身份
+  // 以下全部要求店主身份
   if (p.startsWith('/api/admin/')) {
-    if (!isAdmin()) return fail(res, 401, '请先输入主人密码')
+    if (!isAdmin()) return fail(res, 401, '请先输入店主密码')
 
     // 订单管理
     if (p === '/api/admin/orders' && req.method === 'GET') {
@@ -396,7 +499,7 @@ async function handleAPI(req, res, urlObj) {
       return ok(res, {})
     }
 
-    // 回复评价
+    // 回复评价（逐条回复）
     if (p.match(/^\/api\/admin\/review\/[\w-]+\/reply$/) && req.method === 'POST') {
       const id = p.split('/')[4]
       const r = db.reviews.find(x => x.id === id)
@@ -427,6 +530,6 @@ const server = http.createServer((req, res) => {
 
 loadDB()
 server.listen(PORT, () => {
-  console.log(`家常点菜已开张：http://localhost:${PORT}`)
+  console.log(`jiojio厨房已开张：http://localhost:${PORT}`)
   console.log(`数据文件：${DB_FILE}`)
 })

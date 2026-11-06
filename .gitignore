@@ -1,5 +1,7 @@
-# 运行时数据：含明文管理密码、登录 token、订单与评价，绝不提交
-data/
+# 运行时临时/备份文件忽略；data/db.json 随仓库提供
+# ⚠️ db.json 内含明文店主密码、登录 token、用户密码哈希；本仓库公开，请勿在此文件放真实敏感信息
+data/*
+!data/db.json
 
 # Node
 node_modules/
