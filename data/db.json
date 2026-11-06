@@ -20,6 +20,10 @@
     "u2a8d21fb6f3a477c": {
       "uid": "umw4yh8g5d000",
       "ts": 1793986034045
+    },
+    "ufaf69aaf59714a4e": {
+      "uid": "umw598vz47989",
+      "ts": 1793986506976
     }
   },
   "users": [
@@ -34,6 +38,12 @@
       "nickname": "LJ",
       "pw": "7e6d52c81e72026930a5c28a4142dde5d940fa3150e9c87db4bf2e517aa3bbd9",
       "createdAt": 1793980217184
+    },
+    {
+      "id": "umw598vz47989",
+      "nickname": "测试off973",
+      "pw": "227fed02ee70ed97145bf995ccaa17351d93e7bbb1d4705b98addc38d6a3bc8d",
+      "createdAt": 1793986506976
     }
   ],
   "dishes": [

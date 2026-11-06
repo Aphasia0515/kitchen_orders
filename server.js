@@ -142,9 +142,28 @@ function seedDishes() {
 }
 
 /* ---------------- 菜单与评分 ---------------- */
-// 用户可见的菜单：新上线 + 在售（已下线不显示）
+// 用户可见的菜单排序（优先级从高到低）：
+//   1) 均分 ≥ 4 星的菜，组内按均分降序
+//   2) 新上线
+//   3) 其余在售（评分不足 4 星或未评价）
+//   4) 已下线（仅展示，不可点）
 function menuDishes() {
-  return db.dishes.filter(d => d.status !== 'off')
+  const avg = d => {
+    const s = dishStat(d.id)
+    return s ? (parseFloat(s.avg) || 0) : 0
+  }
+  const rank = d => {
+    if (d.status === 'off') return 3
+    if (avg(d) >= 4) return 0
+    if (d.status === 'new') return 1
+    return 2
+  }
+  return db.dishes.slice().sort((a, b) => {
+    const ra = rank(a), rb = rank(b)
+    if (ra !== rb) return ra - rb
+    if (ra === 0) return avg(b) - avg(a)   // 四星组内按均分降序
+    return 0   // 其余组保持原有顺序（稳定排序）
+  })
 }
 
 // 某道菜的评分统计（按菜评价聚合）
@@ -441,7 +460,8 @@ async function handleAPI(req, res, urlObj) {
     if (!user) return fail(res, 401, '下单前先登录一下')
     const c = cleanOrderInput(body)
     if (c.err) return fail(res, 400, c.err)
-    const menu = new Map(menuDishes().map(d => [d.id, d]))
+    // 下单集合排除已下线（菜单里 off 仅展示，不可点）
+    const menu = new Map(menuDishes().filter(d => d.status !== 'off').map(d => [d.id, d]))
     let total = 0
     const items = []
     for (const it of c.items) {

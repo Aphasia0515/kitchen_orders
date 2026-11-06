@@ -180,9 +180,10 @@ async function loadMenu() {
   try {
     const data = await api('/api/menu')
     menuDishes = data.dishes
-    // 清掉已下线的勾选
+    // 清掉已下线菜的勾选（off 菜现在仍返回，只清选择状态）
     Array.from(selected.keys()).forEach(id => {
-      if (!menuDishes.find(d => d.id === id)) selected.delete(id)
+      const d = menuDishes.find(x => x.id === id)
+      if (!d || d.status === 'off') selected.delete(id)
     })
     renderMenu()
   } catch (e) { toast(e.message) }
@@ -192,40 +193,36 @@ function selTotal() {
   let n = 0, sum = 0
   selected.forEach((count, id) => {
     const d = menuDishes.find(x => x.id === id)
-    if (d) { n += count; sum += d.price * count }
+    if (d && d.status !== 'off') { n += count; sum += d.price * count }
   })
   return { n, sum }
 }
 
 function renderMenu() {
-  const groups = {}
-  menuDishes.forEach(d => (groups[d.category] = groups[d.category] || []).push(d))
-
   let html = ''
-  Object.entries(groups).forEach(([cat, dishes]) => {
-    html += `<div class="cat-title">${esc(cat)}</div>`
-    dishes.forEach(d => {
-      const count = selected.get(d.id) || 0
-      const thumb = d.img
-        ? `<img src="${esc(d.img)}" alt="">`
-        : esc(d.emoji)
-      html += `
-        <div class="dish-row ${count ? 'sel' : ''}" data-id="${d.id}">
-          <div class="check" data-act="toggle" title="勾选"></div>
-          <div class="dish-emoji">${thumb}${d.status === 'new' ? '<span class="badge-new">新</span>' : ''}</div>
-          <div class="dish-info">
-            <div class="dish-name">${d.rating ? `<span class="dish-rating">★${d.rating.avg}</span>` : ''}<span class="dish-name-txt">${esc(d.name)}</span></div>
-            ${d.desc ? `<div class="dish-desc">材料：${esc(d.desc)}</div>` : ''}
-            <div class="dish-price">${d.price}</div>
-          </div>
-          ${count ? `
-          <div class="qty">
-            <button data-act="minus">−</button>
-            <span class="num">${count}</span>
-            <button data-act="plus">＋</button>
-          </div>` : ''}
-        </div>`
-    })
+  // 不再按分类分组：全局按优先级排（好评≥4星 → 新上线 → 其余在售 → 已下线）
+  menuDishes.forEach(d => {
+    const off = d.status === 'off'
+    const count = selected.get(d.id) || 0
+    const thumb = d.img
+      ? `<img src="${esc(d.img)}" alt="">`
+      : esc(d.emoji)
+    html += `
+      <div class="dish-row ${count ? 'sel' : ''} ${off ? 'off' : ''}" data-id="${d.id}">
+        ${off ? '' : '<div class="check" data-act="toggle" title="勾选"></div>'}
+        <div class="dish-emoji">${thumb}${d.status === 'new' ? '<span class="badge-new">新</span>' : ''}</div>
+        <div class="dish-info">
+          <div class="dish-name">${d.rating ? `<span class="dish-rating">★${d.rating.avg}</span>` : ''}<span class="dish-name-txt">${esc(d.name)}</span>${off ? '<span class="badge-off">已下线</span>' : ''}</div>
+          ${d.desc ? `<div class="dish-desc">材料：${esc(d.desc)}</div>` : ''}
+          <div class="dish-price">${d.price}</div>
+        </div>
+        ${count ? `
+        <div class="qty">
+          <button data-act="minus">−</button>
+          <span class="num">${count}</span>
+          <button data-act="plus">＋</button>
+        </div>` : ''}
+      </div>`
   })
   if (!menuDishes.length) {
     html = `<div class="empty">菜单准备中<br>过来看看～</div>`
@@ -244,6 +241,14 @@ $('#menu-list').addEventListener('click', e => {
   const id = row.dataset.id
   const d = menuDishes.find(x => x.id === id)
   if (!d) return
+
+  // 已下线：不可勾选/调数量，点行仍可进详情看历史评价
+  if (d.status === 'off') {
+    if (e.target.closest('[data-act="plus"],[data-act="minus"],[data-act="toggle"]')) {
+      return toast('这道菜已下线啦')
+    }
+    return location.hash = 'dish/' + encodeURIComponent(id)
+  }
 
   const act = e.target.closest('[data-act]')?.dataset.act
   if (act === 'plus') {
@@ -629,7 +634,7 @@ async function loadDishDetail(id) {
           ? `<img class="dish-hero-img" src="${esc(d.img)}" alt="">`
           : `<div class="dish-hero-emoji">${esc(d.emoji)}</div>`}
         <div class="dish-hero-info">
-          <div class="dish-hero-name">${d.rating ? `<span class="dish-rating">★${d.rating.avg}</span>` : ''}${esc(d.name)}${d.status === 'new' ? '<span class="badge-new">新上线</span>' : ''}</div>
+          <div class="dish-hero-name">${d.rating ? `<span class="dish-rating">★${d.rating.avg}</span>` : ''}${esc(d.name)}${d.status === 'new' ? '<span class="badge-new">新上线</span>' : ''}${d.status === 'off' ? '<span class="badge-off">已下线</span>' : ''}</div>
           <div class="dish-hero-sub">${esc(d.category)} · <b>¥${d.price}</b></div>
           ${d.desc ? `<div class="dish-hero-desc">材料：${esc(d.desc)}</div>` : ''}
         </div>
