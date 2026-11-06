@@ -114,7 +114,7 @@ function renderMenu() {
           <div class="dish-emoji">${esc(d.emoji)}</div>
           <div class="dish-info">
             <div class="dish-name">${esc(d.name)}${d.status === 'new' ? '<span class="badge-new">新上线</span>' : ''}</div>
-            ${d.desc ? `<div class="dish-desc">${esc(d.desc)}</div>` : ''}
+            ${d.desc ? `<div class="dish-desc">材料：${esc(d.desc)}</div>` : ''}
             <div class="dish-price">${d.price}</div>
           </div>
           ${count ? `
@@ -590,8 +590,8 @@ function showDishModal(dish) {
       <input class="input" id="d-price" type="number" step="0.5" min="0.5" value="${dish?.price || ''}" placeholder="20">
       <label class="field-label">分类</label>
       <input class="input" id="d-category" value="${esc(dish?.category || '')}" maxlength="10" placeholder="荤菜 / 素菜 / 主食 / 饮品">
-      <label class="field-label">一句话介绍（选填）</label>
-      <input class="input" id="d-desc" value="${esc(dish?.desc || '')}" maxlength="50" placeholder="比如：甜口的，朋友最爱">
+      <label class="field-label">材料（选填）</label>
+      <input class="input" id="d-desc" value="${esc(dish?.desc || '')}" maxlength="50" placeholder="比如：鸡蛋、火腿肠、土豆">
       <label class="field-label">状态</label>
       <div class="chips" id="chips-status">
         <button class="chip ${st === 'new' ? 'on' : ''}" data-v="new">新上线</button>
