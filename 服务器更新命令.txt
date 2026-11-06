@@ -1,0 +1,37 @@
+========================================================
+ jiojio厨房 · 服务器更新脚本（强制覆盖版）
+ 使用：整段复制到服务器终端执行
+========================================================
+
+cd ~/kitchen_orders
+
+# ---------- 1. 停掉旧服务 ----------
+pkill -f 'node server.js' || true
+
+# ---------- 2. 备份当前数据（覆盖后悔了还能找回） ----------
+cp data/db.json ~/db.json.bak.$(date +%F-%H%M%S) 2>/dev/null || true
+
+# ---------- 3. 强制对齐远端仓库（丢弃本地所有改动，含 db.json） ----------
+git fetch origin
+git reset --hard origin/main
+
+# ---------- 4. 后台启动（80 端口） ----------
+PORT=80 nohup node server.js > out.log 2>&1 &
+echo $! > /tmp/diancan.pid
+
+# ---------- 5. 验证 ----------
+sleep 1
+echo "----- 服务状态 -----"
+curl -s -o /dev/null -w "首页: %{http_code}\n" http://127.0.0.1/
+echo "----- 菜单排序 -----"
+curl -s http://127.0.0.1/api/menu | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>{const m=JSON.parse(s);console.log('菜品数:',m.dishes.length);m.dishes.forEach((d,i)=>console.log(' '+(i+1)+'. '+d.name+' ['+d.status+']'+(d.rating?' ★'+d.rating.avg:' 无评')))})"
+echo "----- 启动日志 -----"
+cat out.log
+
+========================================================
+ 附：日常命令
+========================================================
+停止服务      kill $(cat /tmp/diancan.pid)
+看实时日志    tail -f out.log
+看历史错误    cat data/logs/error.log
+只更新不覆盖  pkill -f 'node server.js'; git pull --ff-only origin main; PORT=80 nohup node server.js > out.log 2>&1 & echo $! > /tmp/diancan.pid

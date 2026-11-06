@@ -213,6 +213,7 @@ function renderMenu() {
         <div class="dish-emoji">${thumb}${d.status === 'new' ? '<span class="badge-new">新</span>' : ''}</div>
         <div class="dish-info">
           <div class="dish-name">${d.rating ? `<span class="dish-rating">★${d.rating.avg}</span>` : ''}<span class="dish-name-txt">${esc(d.name)}</span>${off ? '<span class="badge-off">已下线</span>' : ''}</div>
+          <div class="dish-desc">${d.status === 'new' ? '<span class="tag-new">新上线</span>' : ''}${d.status === 'off' ? '<span class="tag-off">已下线</span>' : '<span class="tag-on">在售</span>'}</div>
           ${d.desc ? `<div class="dish-desc">材料：${esc(d.desc)}</div>` : ''}
           <div class="dish-price">${d.price}</div>
         </div>

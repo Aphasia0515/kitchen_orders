@@ -15,13 +15,15 @@
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 /* 必须显式声明：.modal-mask / .order-bar 等带 display:flex，会覆盖浏览器默认的 hidden 隐藏行为 */
 [hidden] { display: none !important; }
-html, body { height: 100%; }
+/* 注意：不能给 body 设 height:100% —— 那会让内容溢出盒子后 padding-bottom 失效，
+   底部留白加不到内容后面，最后一行会被 fixed tabbar 挡住 */
 body {
   font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
   background: var(--bg);
   color: var(--ink);
   font-size: 16px;
-  padding-bottom: 70px;
+  /* 底部留白 ≥ tabbar 实高（61px+安全区）减去 page-body 自带 14px 和卡间隙 12px，再加缓冲 */
+  padding-bottom: calc(75px + env(safe-area-inset-bottom));
 }
 
 /* ---------- 顶栏 ---------- */
@@ -41,7 +43,7 @@ body {
 /* ---------- 布局 ---------- */
 .page-body { padding: 14px; max-width: 640px; margin: 0 auto; }
 /* 菜单页底部有 fixed 结算条(+tabbar)，给内容留出空间防止最后一条被盖住 */
-#view-menu .page-body { padding-bottom: 130px; }
+#view-menu .page-body { padding-bottom: calc(130px + env(safe-area-inset-bottom)); }
 .card {
   background: var(--card);
   border: 1px solid var(--line);
@@ -89,6 +91,15 @@ body {
 
 .dish-emoji { width: 44px; height: 44px; flex: none; font-size: 28px; text-align: center; line-height: 44px; background: #F5F6F7; border-radius: 10px; overflow: visible; position: relative; }
 .dish-emoji img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: 10px; }
+/* 状态标签（在售/新上线/已下线），排在菜名下一行、材料上一行 */
+.tag-new, .tag-on, .tag-off {
+  display: inline-block; font-size: 11px; font-weight: 600;
+  border-radius: 4px; padding: 1px 6px; margin-top: 2px; line-height: 16px;
+}
+.tag-new { color: var(--orange); background: #FFF3E5; }
+.tag-on  { color: var(--green-deep); background: #F2FBF6; }
+.tag-off { color: var(--muted); background: #F0F1F2; }
+
 /* 新上线徽标贴缩略图右上角（省出行内宽度给菜名） */
 .dish-emoji .badge-new {
   position: absolute; top: -7px; right: -7px;
