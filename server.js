@@ -18,6 +18,7 @@ const ROOT = __dirname
 const PUBLIC_DIR = path.join(ROOT, 'public')
 const DATA_DIR = path.join(ROOT, 'data')
 const DB_FILE = path.join(DATA_DIR, 'db.json')
+const IMG_DIR = path.join(DATA_DIR, 'img')   // 上传的菜品图片（不进 git）
 
 /* ---------------- 工具 ---------------- */
 const uid4 = () => crypto.randomBytes(8).toString('hex')
@@ -26,6 +27,36 @@ const nowTs = () => Date.now()
 const TOKEN_TTL = 7 * 24 * 3600 * 1000
 const PW_SALT = 'jiojio_kitchen_2026'
 const pwHash = pwd => sha256(PW_SALT + String(pwd))
+
+/* ---------------- 日志 ---------------- */
+const LOG_DIR = path.join(DATA_DIR, 'logs')
+const ERR_LOG = path.join(LOG_DIR, 'error.log')
+
+// 统一错误日志：双写 —— console（进 out.log，方便 tail）+ data/logs/error.log（进程自管可轮转）
+function logErr(tag, err) {
+  const time = new Date().toLocaleString('zh-CN', { hour12: false })
+  const stack = err instanceof Error ? (err.stack || err.message) : String(err)
+  const line = `[${time}] [${tag}] ${stack}\n`
+  console.error(line.trimEnd())
+  try {
+    if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true })
+    // 单文件超 5MB：旧的 .1 删掉，当前转存为 .1
+    if (fs.existsSync(ERR_LOG) && fs.statSync(ERR_LOG).size > 5 * 1024 * 1024) {
+      try { fs.unlinkSync(ERR_LOG + '.1') } catch (e) { /* 无旧档 */ }
+      fs.renameSync(ERR_LOG, ERR_LOG + '.1')
+    }
+    fs.appendFileSync(ERR_LOG, line)
+  } catch (e) { /* 写日志本身失败只能放弃 */ }
+}
+
+// 进程级兜底：未捕获异常记日志但不退出，服务不挂
+process.on('uncaughtException', err => {
+  logErr('uncaughtException', err)
+  console.error('（已捕获未处理异常，服务继续运行）')
+})
+process.on('unhandledRejection', reason => {
+  logErr('unhandledRejection', reason)
+})
 
 /* ---------------- 数据库（JSON 文件） ---------------- */
 let db = null
@@ -63,7 +94,8 @@ function loadDB() {
         if (!r.dishId) { r.dishId = ''; r.dishName = r.dishName || '整单'; r.emoji = r.emoji || '🍽️' }
       })
     } catch (e) {
-      console.error('db.json 解析失败，使用全新数据', e)
+      logErr('loadDB', e)
+      console.error('db.json 解析失败，使用全新数据')
       db = defaultDB()
     }
   } else {
@@ -150,7 +182,8 @@ const MIME = {
   '.css': 'text/css; charset=utf-8',
   '.js': 'application/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
-  '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.ico': 'image/x-icon'
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
+  '.webp': 'image/webp', '.gif': 'image/gif'
 }
 
 function sendJSON(res, code, data) {
@@ -176,7 +209,65 @@ function readBody(req) {
   })
 }
 
+/* 二进制 body（图片上传用），上限 5MB */
+function readBodyBuffer(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = []
+    let size = 0
+    req.on('data', c => {
+      size += c.length
+      if (size > 5 * 1024 * 1024) { reject(new Error('图片超过 5MB')); req.destroy() }
+      chunks.push(c)
+    })
+    req.on('end', () => resolve(Buffer.concat(chunks)))
+    req.on('error', reject)
+  })
+}
+
+/* 把 multipart 表单拆成 { name, filename, contentType, data } 列表 */
+function splitMultipart(buf, boundary) {
+  const out = []
+  let start = buf.indexOf(boundary)
+  while (start !== -1) {
+    const next = buf.indexOf(boundary, start + boundary.length)
+    if (next === -1) break
+    // 段内容 = boundary 之后到下一个 boundary 之前，去掉前后的 \r\n
+    let segStart = start + boundary.length
+    let segEnd = next
+    if (buf[segStart] === 0x0d && buf[segStart + 1] === 0x0a) segStart += 2
+    if (buf[segEnd - 2] === 0x0d && buf[segEnd - 1] === 0x0a) segEnd -= 2
+    const seg = buf.subarray(segStart, segEnd)
+    // 头部和内容以空行 \r\n\r\n 分隔
+    const headEnd = seg.indexOf('\r\n\r\n')
+    if (headEnd !== -1) {
+      const head = seg.subarray(0, headEnd).toString('utf8')
+      const data = seg.subarray(headEnd + 4)
+      const name = head.match(/name="([^"]*)"/)?.[1] || ''
+      const filename = head.match(/filename="([^"]*)"/)?.[1] || ''
+      const contentType = (head.match(/Content-Type:\s*(.+)/i)?.[1] || '').trim()
+      if (name) out.push({ name, filename, contentType, data })
+    }
+    start = next
+  }
+  return out
+}
+
 function serveStatic(req, res, urlPath) {
+  // 菜品图片存 data/img（不进 git），经 /img/ 前缀对外提供（中文菜名会带 %xx 编码，需解码）
+  if (urlPath.startsWith('/img/')) {
+    let rel = urlPath.slice(4)
+    try { rel = decodeURIComponent(rel) } catch (e) { /* 非法编码按原样，交给 404 */ }
+    const imgFile = path.normalize(path.join(IMG_DIR, rel))
+    if (!imgFile.startsWith(IMG_DIR)) return fail(res, 403, 'forbidden')
+    return fs.readFile(imgFile, (err, buf) => {
+      if (err) return fail(res, 404, 'not found')
+      res.writeHead(200, {
+        'Content-Type': MIME[path.extname(imgFile)] || 'application/octet-stream',
+        'Cache-Control': 'public, max-age=86400'
+      })
+      res.end(buf)
+    })
+  }
   let p = urlPath === '/' ? '/index.html' : urlPath
   const file = path.normalize(path.join(PUBLIC_DIR, p))
   if (!file.startsWith(PUBLIC_DIR)) return fail(res, 403, 'forbidden')
@@ -195,6 +286,30 @@ function serveStatic(req, res, urlPath) {
     res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream' })
     res.end(buf)
   })
+}
+
+/* 菜品图片文件名 = 菜名（清理非法字符），同名直接覆盖 */
+function dishFileName(name, ext) {
+  const clean = String(name || '')
+    .replace(/[\\/:*?"<>|\r\n\t]/g, '')   // 文件名非法字符
+    .replace(/^\.+/, '')                   // 不能以点开头
+    .trim()
+    .slice(0, 20)
+  return (clean || 'dish') + ext
+}
+
+/* 改菜名时把图片文件一并重命名，db.img 路径同步 */
+function renameDishPhoto(d, newName) {
+  if (!d.img || !d.img.startsWith('/img/')) return
+  const oldName = path.basename(d.img)
+  const newFname = dishFileName(newName, path.extname(oldName) || '.jpg')
+  if (newFname === oldName) return   // 文件名没变（菜名相同或清后相同）
+  const oldPath = path.join(IMG_DIR, oldName)
+  const newPath = path.join(IMG_DIR, newFname)
+  try {
+    if (fs.existsSync(oldPath)) fs.renameSync(oldPath, newPath)
+    d.img = '/img/' + newFname
+  } catch (e) { logErr('renameDishPhoto', e) }
 }
 
 /* ---------------- 校验 ---------------- */
@@ -221,7 +336,9 @@ function cleanOrderInput(body) {
 async function handleAPI(req, res, urlObj) {
   const p = urlObj.pathname
   const q = urlObj.searchParams
-  const body = ['POST', 'PUT', 'DELETE'].includes(req.method) ? await readBody(req) : {}
+  // 图片上传是 multipart，不能按 JSON 读
+  const isUpload = p === '/api/admin/photo' && req.method === 'POST'
+  const body = isUpload ? {} : (['POST', 'PUT', 'DELETE'].includes(req.method) ? await readBody(req) : {})
   const adminToken = req.headers['x-admin-token'] || ''
 
   function isAdmin() {
@@ -278,11 +395,19 @@ async function handleAPI(req, res, urlObj) {
 
   /* ---- 公开接口（无需登录） ---- */
 
+  // 浏览器页面报错上报（app.js window.onerror），只记录不返回内容
+  if (p === '/api/log' && req.method === 'POST') {
+    const msg = String(body.msg || '').slice(0, 500)
+    logErr('browser', msg || '(空消息)')
+    return ok(res, {})
+  }
+
   // 菜单（含每道菜的评分统计）
   if (p === '/api/menu' && req.method === 'GET') {
     const dishes = menuDishes().map(d => ({
       id: d.id, name: d.name, emoji: d.emoji, price: d.price,
       category: d.category, desc: d.desc, status: d.status,
+      img: d.img || '',
       rating: dishStat(d.id)
     }))
     return ok(res, { dishes })
@@ -339,6 +464,12 @@ async function handleAPI(req, res, urlObj) {
     db.orders.unshift(order)
     saveDB()
     return ok(res, { order: orderView(order) })
+  }
+
+  // 订单列表（公开：看单不需要登录，下单/取消/评价才需要；标注下单人昵称）
+  if (p === '/api/orders' && req.method === 'GET') {
+    const list = db.orders.slice(0, 50).map(orderView)
+    return ok(res, { list })
   }
 
   // 我的订单
@@ -450,6 +581,59 @@ async function handleAPI(req, res, urlObj) {
       return ok(res, { list: db.dishes })
     }
 
+    // 注册用户列表（只给店主，不返回密码哈希和 id）
+    if (p === '/api/admin/users' && req.method === 'GET') {
+      const list = db.users
+        .slice()
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .map(u => ({ nickname: u.nickname, createdAt: u.createdAt }))
+      return ok(res, { list })
+    }
+
+    // 上传菜品图片：multipart/form-data，字段 photo；文件名 = 菜名.jpg（仅店主）
+    if (p === '/api/admin/photo' && req.method === 'POST') {
+      const dishId = q.get('id') || ''
+      const d = db.dishes.find(x => x.id === dishId)
+      if (!d) return fail(res, 404, '菜品不存在')
+      const boundary = (req.headers['content-type'] || '').match(/boundary=(.+)$/)?.[1]
+      if (!boundary) return fail(res, 400, '不是表单上传')
+      const buf = await readBodyBuffer(req)
+      if (!buf.length) return fail(res, 400, '没收到文件')
+
+      // 按 boundary 拆分，取第一个文件段的 Content-Type 和内容
+      const parts = splitMultipart(buf, '--' + boundary)
+      const file = parts.find(part => part.filename)
+      if (!file) return fail(res, 400, '没找到图片字段')
+      const extMime = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif' }
+      const ext = extMime[file.contentType] || '.jpg'
+      if (!fs.existsSync(IMG_DIR)) fs.mkdirSync(IMG_DIR, { recursive: true })
+
+      // 换图后删除旧文件，避免目录里堆没用的图
+      if (d.img) {
+        const oldPath = path.join(IMG_DIR, path.basename(d.img))
+        fs.unlink(oldPath, () => {})
+      }
+      // 文件名跟菜名走，同名自动覆盖
+      const fname = dishFileName(d.name, ext)
+      fs.writeFileSync(path.join(IMG_DIR, fname), file.data)
+      d.img = '/img/' + fname
+      saveDB()
+      return ok(res, { dish: d })
+    }
+
+    // 清除菜品图片
+    if (p === '/api/admin/photo/clear' && req.method === 'POST') {
+      const dishId = q.get('id') || ''
+      const d = db.dishes.find(x => x.id === dishId)
+      if (!d) return fail(res, 404, '菜品不存在')
+      if (d.img) {
+        fs.unlink(path.join(IMG_DIR, path.basename(d.img)), () => {})
+        d.img = ''
+        saveDB()
+      }
+      return ok(res, { dish: d })
+    }
+
     // 新增菜品
     if (p === '/api/admin/dish' && req.method === 'POST') {
       const name = String(body.name || '').trim().slice(0, 20)
@@ -471,13 +655,20 @@ async function handleAPI(req, res, urlObj) {
       return ok(res, { dish })
     }
 
-    // 修改菜品
+    // 修改菜品（改菜名时，图片文件一并重命名，路径同步）
     if (p.match(/^\/api\/admin\/dish\/[\w-]+$/) && req.method === 'PUT') {
       const id = p.split('/')[4]
       const d = db.dishes.find(x => x.id === id)
       if (!d) return fail(res, 404, '菜品不存在')
-      if (body.name !== undefined) d.name = String(body.name).trim().slice(0, 20) || d.name
+      if (body.name !== undefined) {
+        const newName = String(body.name).trim().slice(0, 20) || d.name
+        if (newName !== d.name) {
+          d.name = newName
+          renameDishPhoto(d, newName)
+        }
+      }
       if (body.emoji !== undefined) d.emoji = String(body.emoji).slice(0, 8) || d.emoji
+      if (body.img !== undefined) d.img = String(body.img).slice(0, 200)
       if (body.price !== undefined) {
         const price = Math.round(parseFloat(body.price) * 100) / 100
         if (price > 0 && price < 10000) d.price = price
@@ -520,11 +711,18 @@ const server = http.createServer((req, res) => {
   const urlObj = new URL(req.url, `http://${req.headers.host || 'localhost'}`)
   if (urlObj.pathname.startsWith('/api/')) {
     handleAPI(req, res, urlObj).catch(e => {
-      console.error(e)
+      logErr('handleAPI ' + req.method + ' ' + urlObj.pathname, e)
       if (!res.headersSent) fail(res, 500, '服务器开小差了')
     })
   } else {
-    serveStatic(req, res, urlObj.pathname)
+    // 静态文件/图片：回调风格，兜一层防连接挂死
+    try {
+      serveStatic(req, res, urlObj.pathname)
+    } catch (e) {
+      logErr('serveStatic ' + urlObj.pathname, e)
+      if (!res.headersSent) fail(res, 500, '服务器开小差了')
+      else res.end()
+    }
   }
 })
 

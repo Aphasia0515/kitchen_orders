@@ -23,10 +23,10 @@ node server.js
 
 ```bash
 # 指定端口
-PORT=8080 node server.js
+PORT=80 node server.js
 
 # 后台常驻（关掉终端也不停）：最简单用 nohup
-nohup node server.js > out.log 2>&1 &
+PORT=80 nohup node server.js > out.log 2>&1 &
 
 # 或者用 pm2（可选，需先 npm i -g pm2）
 pm2 start server.js --name diancan

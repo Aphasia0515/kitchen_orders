@@ -40,6 +40,8 @@ body {
 
 /* ---------- 布局 ---------- */
 .page-body { padding: 14px; max-width: 640px; margin: 0 auto; }
+/* 菜单页底部有 fixed 结算条(+tabbar)，给内容留出空间防止最后一条被盖住 */
+#view-menu .page-body { padding-bottom: 130px; }
 .card {
   background: var(--card);
   border: 1px solid var(--line);
@@ -78,9 +80,18 @@ body {
 .check::after { content: '✓'; opacity: 0; }
 .dish-row.sel .check::after { opacity: 1; }
 
-.dish-emoji { width: 44px; height: 44px; flex: none; font-size: 28px; text-align: center; line-height: 44px; background: #F5F6F7; border-radius: 10px; }
+.dish-emoji { width: 44px; height: 44px; flex: none; font-size: 28px; text-align: center; line-height: 44px; background: #F5F6F7; border-radius: 10px; overflow: visible; position: relative; }
+.dish-emoji img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: 10px; }
+/* 新上线徽标贴缩略图右上角（省出行内宽度给菜名） */
+.dish-emoji .badge-new {
+  position: absolute; top: -7px; right: -7px;
+  font-size: 10px; font-weight: 700; color: #fff;
+  background: var(--orange); border-radius: 8px; padding: 1px 5px;
+  flex: none; line-height: 14px; box-shadow: 0 0 0 2px var(--card);
+}
 .dish-info { flex: 1; min-width: 0; }
-.dish-name { font-weight: 600; font-size: 16px; display: flex; align-items: center; gap: 6px; }
+.dish-name { font-weight: 600; font-size: 16px; display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; }
+.dish-name-txt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .dish-desc { color: var(--muted); font-size: 13px; margin-top: 2px; }
 .dish-price { color: var(--ink); font-weight: 700; font-size: 15px; margin-top: 3px; }
 .dish-price::before { content: '¥'; font-size: 12px; font-weight: 500; }
@@ -88,16 +99,17 @@ body {
 .badge-new {
   font-size: 11px; font-weight: 700; color: #fff;
   background: var(--orange); border-radius: 4px; padding: 1px 6px;
+  flex: none;
 }
 
-/* 数量步进（选中后出现） */
-.qty { display: flex; align-items: center; gap: 8px; flex: none; }
+/* 数量步进（选中后出现）——紧凑版，给菜名留宽度 */
+.qty { display: flex; align-items: center; gap: 4px; flex: none; }
 .qty button {
-  width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--line);
-  background: #fff; font-size: 16px; font-weight: 700; cursor: pointer; color: var(--ink); line-height: 1;
+  width: 24px; height: 24px; border-radius: 7px; border: 1px solid var(--line);
+  background: #fff; font-size: 15px; font-weight: 700; cursor: pointer; color: var(--ink); line-height: 1;
 }
 .qty button:active { background: var(--bg); }
-.qty .num { min-width: 16px; text-align: center; font-weight: 700; font-size: 15px; }
+.qty .num { min-width: 12px; text-align: center; font-weight: 700; font-size: 14px; }
 
 /* ---------- 底部结算条 ---------- */
 .order-bar {
@@ -169,6 +181,8 @@ body {
 .st-cancelled { background: #F0F1F2; color: var(--muted); }
 
 .order-items { margin-top: 10px; font-size: 14px; line-height: 1.9; }
+.order-user { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; min-width: 0; }
+.order-user .user-avatar { width: 22px; height: 22px; font-size: 11px; }
 .order-total { text-align: right; font-weight: 700; margin-top: 6px; }
 .order-total b { color: var(--ink); font-size: 17px; }
 .order-meta {
@@ -263,17 +277,9 @@ body {
 .dish-rating {
   font-size: 11px; font-weight: 700; color: var(--orange);
   background: #FFF7E8; border-radius: 5px; padding: 1px 6px; flex: none;
-  cursor: pointer;
 }
 
-/* ---------- 菜品详情入口 / 详情页 ---------- */
-.dish-entry {
-  display: inline-flex; align-items: center; gap: 6px;
-  margin-top: 5px; cursor: pointer; flex: none;
-}
-.dish-entry-txt { font-size: 12px; color: var(--muted); }
-.dish-chev { color: var(--muted); font-size: 16px; line-height: 1; }
-.dish-rating.none { color: var(--muted); background: #F0F1F2; }
+/* ---------- 菜品详情页 ---------- */
 .back-link { color: var(--green); text-decoration: none; }
 
 .dish-hero { display: flex; align-items: center; gap: 16px; }
@@ -282,11 +288,42 @@ body {
   text-align: center; line-height: 64px;
   background: #F5F6F7; border-radius: 12px;
 }
+.dish-hero-img {
+  width: 64px; height: 64px; flex: none; object-fit: cover;
+  border-radius: 12px; background: #F5F6F7; border: 1px solid var(--line);
+}
 .dish-hero-info { flex: 1; min-width: 0; }
 .dish-hero-name { font-weight: 700; font-size: 18px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .dish-hero-sub { color: var(--muted); font-size: 14px; margin-top: 4px; }
 .dish-hero-sub b { color: var(--ink); font-size: 16px; }
 .dish-hero-desc { color: var(--muted); font-size: 13px; margin-top: 4px; line-height: 1.6; }
+
+/* ---------- 编辑菜品：图片 ---------- */
+/* 管理列表头像：点头像换图，右上角 📷 提示可点 */
+.mgr-avatar { position: relative; cursor: pointer; overflow: visible; }
+.mgr-avatar .avatar-cam {
+  position: absolute; right: -7px; bottom: -7px;
+  width: 22px; height: 22px; line-height: 22px; text-align: center;
+  font-size: 12px; border-radius: 50%;
+  background: var(--card); border: 1px solid var(--line);
+  box-shadow: 0 1px 3px rgba(0,0,0,.12);
+}
+.mgr-avatar img { border-radius: 10px; }
+.photo-box {
+  display: flex; align-items: center; gap: 12px;
+  margin-top: 8px; padding-bottom: 12px;
+  border-bottom: 1px solid var(--line); margin-bottom: 12px;
+}
+.photo-box img {
+  width: 64px; height: 64px; object-fit: cover;
+  border-radius: 12px; border: 1px solid var(--line); background: #F5F6F7;
+}
+.photo-emoji {
+  width: 64px; height: 64px; flex: none; font-size: 40px;
+  text-align: center; line-height: 64px;
+  background: #F5F6F7; border-radius: 12px;
+}
+.photo-ops { display: flex; flex-direction: column; gap: 6px; }
 
 /* ---------- 按菜评价 ---------- */
 .rate-row { padding: 14px 16px; }

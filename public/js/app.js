@@ -19,6 +19,20 @@ function toast(msg) {
 }
 
 async function api(path, opts = {}) {
+  // FormData（图片上传）时交给浏览器自动定 boundary，不手动设 JSON 头
+  if (opts.form) {
+    const res = await fetch(path, {
+      method: opts.method || 'POST',
+      headers: {
+        ...(store.userToken ? { 'x-user-token': store.userToken } : {}),
+        ...(store.adminToken ? { 'x-admin-token': store.adminToken } : {})
+      },
+      body: opts.form
+    })
+    const data = await res.json()
+    if (!data.ok) throw new Error(data.msg || '请求失败')
+    return data
+  }
   const headers = { 'Content-Type': 'application/json' }
   if (store.userToken) headers['x-user-token'] = store.userToken
   if (store.adminToken) headers['x-admin-token'] = store.adminToken
@@ -192,19 +206,17 @@ function renderMenu() {
     html += `<div class="cat-title">${esc(cat)}</div>`
     dishes.forEach(d => {
       const count = selected.get(d.id) || 0
+      const thumb = d.img
+        ? `<img src="${esc(d.img)}" alt="">`
+        : esc(d.emoji)
       html += `
         <div class="dish-row ${count ? 'sel' : ''}" data-id="${d.id}">
-          <div class="check"></div>
-          <div class="dish-emoji">${esc(d.emoji)}</div>
+          <div class="check" data-act="toggle" title="勾选"></div>
+          <div class="dish-emoji">${thumb}${d.status === 'new' ? '<span class="badge-new">新</span>' : ''}</div>
           <div class="dish-info">
-            <div class="dish-name">${esc(d.name)}${d.status === 'new' ? '<span class="badge-new">新上线</span>' : ''}</div>
+            <div class="dish-name">${d.rating ? `<span class="dish-rating">★${d.rating.avg}</span>` : ''}<span class="dish-name-txt">${esc(d.name)}</span></div>
             ${d.desc ? `<div class="dish-desc">材料：${esc(d.desc)}</div>` : ''}
             <div class="dish-price">${d.price}</div>
-            <div class="dish-entry" data-act="dish-detail">
-              ${d.rating ? `<span class="dish-rating">★${d.rating.avg}·${d.rating.count}</span>` : '<span class="dish-rating none">暂无评价</span>'}
-              <span class="dish-entry-txt">看评价</span>
-              <span class="dish-chev">›</span>
-            </div>
           </div>
           ${count ? `
           <div class="qty">
@@ -227,14 +239,6 @@ function renderMenu() {
 }
 
 $('#menu-list').addEventListener('click', e => {
-  // 点评分/「暂无评价」入口 → 进菜品详情页（不触发行勾选）
-  const entry = e.target.closest('[data-act="dish-detail"]')
-  if (entry) {
-    const row = entry.closest('.dish-row')
-    if (row) location.hash = 'dish/' + encodeURIComponent(row.dataset.id)
-    return
-  }
-
   const row = e.target.closest('.dish-row')
   if (!row) return
   const id = row.dataset.id
@@ -252,11 +256,14 @@ $('#menu-list').addEventListener('click', e => {
     if (cur <= 1) selected.delete(id)
     else selected.set(id, cur - 1)
     renderMenu()
-  } else {
-    // 点整行 = 勾选/取消勾选
+  } else if (act === 'toggle') {
+    // 点勾选框 = 勾选/取消（点整行其余区域 = 进详情页）
     if (selected.has(id)) selected.delete(id)
     else selected.set(id, 1)
     renderMenu()
+  } else {
+    // 点整行（缩略图/菜名/材料等）→ 菜品详情页
+    location.hash = 'dish/' + encodeURIComponent(id)
   }
 })
 
@@ -355,42 +362,43 @@ const STATUS = {
 }
 
 async function loadMyOrders() {
-  if (!store.user) {
-    $('#orders-list').innerHTML = `
-      <div class="card login-hint">
-        <div style="font-size:34px">🔐</div>
-        <div style="margin-top:8px;font-weight:600">登录后才能看你的订单</div>
-        <div class="stat-sub" style="margin-top:4px">下单和写评价都需要登录</div>
-        <button class="btn btn-primary" style="margin-top:14px" data-act="login">登录 / 注册</button>
-      </div>`
-    return
-  }
   try {
-    const data = await api('/api/myorders', {
-      onAuthExpired() { store.userToken = ''; store.user = null; updateLoginUI(); loadMyOrders() }
-    })
-    const list = data.list
-    if (!list.length) {
+    // 公共订单列表：看单不需要登录；下单/取消/评价才需要
+    const data = await api('/api/orders')
+    let orders = data.list
+
+    // 已登录：我的单排在最前面，其余人按时间排（自己的单可操作）
+    const me = store.user
+    if (me) {
+      const mine = orders.filter(o => o.uid === me.id)
+      const others = orders.filter(o => o.uid !== me.id)
+      orders = mine.concat(others)
+    }
+
+    if (!orders.length) {
       $('#orders-list').innerHTML = `<div class="empty">还没有订单<br>去「菜单」勾几道菜吧</div>`
       return
     }
-    $('#orders-list').innerHTML = list.map(o => {
+    $('#orders-list').innerHTML = orders.map(o => {
       const [txt, cls] = STATUS[o.status] || ['未知', 'st-cancelled']
       const items = o.items.map(i => `${esc(i.name)} × ${i.count}`).join('<br>')
       const mealText = `${o.mealDate === 'tomorrow' ? '明天' : '今天'} ${o.mealTime}`
+      const mine = me && o.uid === me.id
       return `
         <div class="card">
           <div class="order-head">
-            <span class="order-no">${o.timeText}</span>
+            <span class="order-user"><span class="user-avatar">${esc((o.nickname || '?').slice(0, 1))}</span>${esc(o.nickname || '匿名')}</span>
             <span class="status-tag ${cls}">${txt}</span>
           </div>
           <div class="order-items">${items}</div>
           <div class="order-total">合计 <b>¥${o.total}</b></div>
           <div class="order-meta">🕒 预约 ${mealText}${o.note ? '<br>💬 ' + esc(o.note) : ''}${o.status === 'rejected' && o.rejectReason ? '<br>店主留言：' + esc(o.rejectReason) : ''}</div>
+          <div class="order-no" style="margin-top:6px">${o.timeText}</div>
+          ${mine ? `
           <div class="order-actions">
             ${o.status === 'pending' ? `<button class="btn btn-ghost btn-sm" data-act="cancel" data-id="${o.id}">取消</button>` : ''}
             ${o.canReview ? `<button class="btn btn-primary btn-sm" data-act="review" data-id="${o.id}">评价</button>` : ''}
-          </div>
+          </div>` : ''}
         </div>`
     }).join('')
   } catch (e) { toast(e.message) }
@@ -402,10 +410,7 @@ $('#orders-list').addEventListener('click', e => {
   if (btn.dataset.act === 'login') return showLoginModal(() => loadMyOrders())
   if (btn.dataset.act === 'cancel') cancelOrder(btn.dataset.id)
   if (btn.dataset.act === 'review') {
-    // 找到当前列表里的订单对象，传给评价弹层（需要 items / reviewedIds）
-    api('/api/myorders', {
-      onAuthExpired() { store.userToken = ''; store.user = null; updateLoginUI() }
-    }).then(data => {
+    api('/api/orders').then(data => {
       const o = data.list.find(x => x.id === btn.dataset.id)
       if (o) showReviewModal(o)
     }).catch(e2 => toast(e2.message))
@@ -522,14 +527,68 @@ async function loadReviews() {
           <div class="stars">${starsHTML(parseFloat(stat.avg))}</div>
           <div class="stat-sub" style="margin-top:6px">${stat.goodRate}% 好评</div>
         </div>
-      </div>`
+      </div>
+      <button class="btn btn-primary btn-block" id="write-review-btn">✍️ 写评价</button>`
     if (!list.length) {
       html += `<div class="empty">还没有评价<br>吃完记得来打分呀</div>`
     } else {
       html += list.map(r => reviewCardHTML(r, false)).join('')
     }
     $('#reviews-body').innerHTML = html
+
+    $('#write-review-btn').addEventListener('click', () => openWriteReview())
   } catch (e) { toast(e.message) }
+}
+
+// 「写评价」：详情页带 dishId（优先找含这道菜的可评订单）；评价页不带（列全部）
+async function openWriteReview(dishId = '') {
+  if (!store.user) return showLoginModal(() => openWriteReview(dishId))
+  let data
+  try {
+    data = await api('/api/myorders', {
+      onAuthExpired() { store.userToken = ''; store.user = null; updateLoginUI() }
+    })
+  } catch (e) { return toast(e.message) }
+  const all = data.list || []
+  const reviewable = all.filter(o => o.canReview)
+
+  if (dishId) {
+    const match = reviewable.filter(o => o.items.some(i => i.dishId === dishId))
+    if (match.length === 1) return showReviewModal(match[0])
+    if (match.length > 1) return pickOrderModal(match)
+    const ate = all.find(o => o.status === 'completed' && o.items.some(i => i.dishId === dishId))
+    if (ate && (ate.reviewedIds || []).includes(dishId)) return toast('这道菜你已经评过啦')
+    if (ate) return toast('这单的菜都评过啦')
+    return toast('要点过这道菜、订单完成后才能评价哦')
+  }
+
+  if (!reviewable.length) {
+    return toast('暂时没有可评价的订单（只有已完成的单能评，每道菜每单一次）')
+  }
+  if (reviewable.length === 1) return showReviewModal(reviewable[0])
+  return pickOrderModal(reviewable)
+}
+
+// 多个可评订单 → 弹选择列表
+let pickable = []
+function pickOrderModal(list) {
+  pickable = list
+  openModal(`
+    <div class="modal-title">选择要评价的订单 <button class="modal-close" onclick="closeModal()">✕</button></div>
+    ${list.map(o => `
+      <div class="card" style="cursor:pointer" onclick="pickOrderFromList('${esc(o.id)}')">
+        <div class="order-head">
+          <span class="review-name">${o.items.map(i => esc(i.name)).join('、')}</span>
+          <span class="stat-sub">${o.timeText}</span>
+        </div>
+        <div class="stat-sub" style="margin-top:4px">没评过的菜：${o.items.filter(i => !(o.reviewedIds || []).includes(i.dishId)).map(i => esc(i.name)).join('、')}</div>
+      </div>`).join('')}
+  `)
+}
+function pickOrderFromList(id) {
+  const o = pickable.find(x => x.id === id)
+  pickable = []
+  if (o) { closeModal(); showReviewModal(o) }
 }
 
 /* ---------- 菜品详情页（每道菜都能点进去看评价） ---------- */
@@ -540,6 +599,13 @@ function showDishView(id) {
   clearInterval(refreshTimer)
   loadDishDetail(id)
 }
+
+// 详情页「写评价」按钮：常驻显示，点击后按规则找可评订单
+$('#dish-body').addEventListener('click', e => {
+  const btn = e.target.closest('[data-act="write-review"]')
+  if (!btn) return
+  openWriteReview(btn.dataset.dish || '')
+})
 
 async function loadDishDetail(id) {
   const body = $('#dish-body')
@@ -559,9 +625,11 @@ async function loadDishDetail(id) {
 
     let html = `
       <div class="card dish-hero">
-        <div class="dish-hero-emoji">${esc(d.emoji)}</div>
+        ${d.img
+          ? `<img class="dish-hero-img" src="${esc(d.img)}" alt="">`
+          : `<div class="dish-hero-emoji">${esc(d.emoji)}</div>`}
         <div class="dish-hero-info">
-          <div class="dish-hero-name">${esc(d.name)}${d.status === 'new' ? '<span class="badge-new">新上线</span>' : ''}</div>
+          <div class="dish-hero-name">${d.rating ? `<span class="dish-rating">★${d.rating.avg}</span>` : ''}${esc(d.name)}${d.status === 'new' ? '<span class="badge-new">新上线</span>' : ''}</div>
           <div class="dish-hero-sub">${esc(d.category)} · <b>¥${d.price}</b></div>
           ${d.desc ? `<div class="dish-hero-desc">材料：${esc(d.desc)}</div>` : ''}
         </div>
@@ -575,7 +643,8 @@ async function loadDishDetail(id) {
           <div class="stars">${starsHTML(stat ? parseFloat(stat.avg) : 0)}</div>
           <div class="stat-sub" style="margin-top:6px">${stat ? stat.count + ' 人评过' : '还没有评价'}</div>
         </div>
-      </div>`
+      </div>
+      <button class="btn btn-primary btn-block" data-act="write-review" data-dish="${esc(id)}">✍️ 写评价</button>`
     if (!list.length) {
       html += '<div class="empty" style="padding:30px 0">这道菜还没有评价<br>吃完记得来打分呀</div>'
     } else {
@@ -634,6 +703,7 @@ function setAdminTab(name) {
   if (name === 'orders') { loadAdminOrders(); refreshTimer = setInterval(loadAdminOrders, 15000) }
   if (name === 'dishes') loadAdminDishes()
   if (name === 'reviews') loadAdminReviews()
+  if (name === 'users') loadAdminUsers()
 }
 
 /* ---------- 订单管理 ---------- */
@@ -672,9 +742,15 @@ async function loadAdminOrders() {
 }
 
 $('#admin-body').addEventListener('click', async e => {
-  const btn = e.target.closest('button[data-act]')
+  const btn = e.target.closest('[data-act]')
   if (!btn) return
   const { act, id } = btn.dataset
+
+  // 点头像 = 直接换图
+  if (act === 'photo') {
+    uploadDishPhoto(id, () => loadAdminDishes())
+    return
+  }
 
   // 订单操作
   if (act === 'accept' || act === 'complete' || act === 'reject') {
@@ -721,6 +797,61 @@ $('#admin-body').addEventListener('click', async e => {
 /* ---------- 菜品管理 ---------- */
 const DISH_STATUS = { new: ['新上线', 'bs-new'], on: ['在售', 'bs-on'], off: ['已下线', 'bs-off'] }
 
+/* 弹出文件选择器并上传菜品图片；成功后回调 onDone(新的 img 路径)
+   超过 5MB 的先在前端压缩（最长边 1600px、JPEG 85%），手机原图也能传 */
+function uploadDishPhoto(dishId, onDone) {
+  document.querySelector('input.__photo-picker')?.remove()
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.className = '__photo-picker'
+  input.style.display = 'none'
+  input.accept = 'image/jpeg,image/png,image/webp,image/gif'
+  input.onchange = async () => {
+    const file = input.files[0]
+    input.remove()
+    if (!file) return
+    try {
+      let blob = file
+      if (file.size > 5 * 1024 * 1024) {
+        blob = await compressImage(file)
+        if (blob.size > 5 * 1024 * 1024) return toast('压缩后仍超过 5MB，换一张试试')
+      }
+      toast('上传中…')
+      const fd = new FormData()
+      fd.append('photo', blob, 'photo.jpg')
+      const data = await api(`/api/admin/photo?id=${encodeURIComponent(dishId)}`, { method: 'POST', form: fd })
+      toast('图片已更新')
+      if (onDone) onDone(data.dish.img)
+    } catch (e) { toast(e.message) }
+  }
+  document.body.appendChild(input)   // 挂到 DOM 再触发，点击事件更可靠
+  input.click()
+}
+
+/* canvas 压缩图片：最长边 1600px，JPEG 85% */
+function compressImage(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      const MAX = 1600
+      let { width: w, height: h } = img
+      if (w > MAX || h > MAX) {
+        if (w >= h) { h = Math.round(h * MAX / w); w = MAX }
+        else { w = Math.round(w * MAX / h); h = MAX }
+      }
+      const canvas = document.createElement('canvas')
+      canvas.width = w
+      canvas.height = h
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h)
+      canvas.toBlob(b => b ? resolve(b) : reject(new Error('压缩失败')), 'image/jpeg', 0.85)
+    }
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('图片读取失败')) }
+    img.src = url
+  })
+}
+
 async function loadAdminDishes() {
   try {
     const data = await api('/api/admin/dishes')
@@ -738,7 +869,10 @@ async function loadAdminDishes() {
       const [stTxt, stCls] = DISH_STATUS[d.status] || DISH_STATUS.on
       return `
       <div class="card dish-mgr-row">
-        <div class="dish-emoji" style="background:#F5F6F7">${esc(d.emoji)}</div>
+        <div class="dish-emoji mgr-avatar" data-act="photo" data-id="${d.id}" title="点击更换图片">
+          ${d.img ? `<img src="${esc(d.img)}" alt="">` : esc(d.emoji)}
+          <span class="avatar-cam">📷</span>
+        </div>
         <div class="dish-mgr-info">
           <div class="dish-mgr-name">${esc(d.name)}<span class="badge-status ${stCls}">${stTxt}</span></div>
           <div class="dish-mgr-sub">${esc(d.category)} · ¥${d.price}${d.desc ? ' · ' + esc(d.desc) : ''}</div>
@@ -766,6 +900,15 @@ function showDishModal(dish) {
   openModal(`
     <div class="modal-title">${isEdit ? '编辑菜品' : '新增菜品'} <button class="modal-close" onclick="closeModal()">✕</button></div>
     <div class="card">
+      ${isEdit ? `
+      <label class="field-label">图片（菜单和详情页显示，无图片时用 emoji）</label>
+      <div class="photo-box" data-act="photo" data-id="${dish.id}" style="cursor:pointer">
+        ${dish.img ? `<img src="${esc(dish.img)}" alt="">` : `<span class="photo-emoji">${esc(dish.emoji || '🍽️')}</span>`}
+        <div class="photo-ops">
+          <span class="btn-text">点击更换图片</span>
+          ${dish.img ? '<span class="btn-text gray" id="d-photo-del">移除</span>' : ''}
+        </div>
+      </div>` : '<div class="stat-sub" style="margin:2px 0 12px">保存后可点编辑里的图片上传</div>'}
       <label class="field-label">菜名</label>
       <input class="input" id="d-name" value="${esc(dish?.name || '')}" maxlength="20" placeholder="比如：可乐鸡翅">
       <label class="field-label">图标（一个 emoji，选填）</label>
@@ -794,6 +937,26 @@ function showDishModal(dish) {
     if (!chip) return
     chip.parentElement.querySelectorAll('.chip').forEach(c => c.classList.remove('on'))
     chip.classList.add('on')
+  })
+
+  // 点图片框 = 上传；「移除」= 清除
+  $('.photo-box[data-act=photo]')?.addEventListener('click', e => {
+    if (e.target.id === 'd-photo-del') return
+    uploadDishPhoto(dish.id, img => {
+      dish.img = img
+      closeModal()
+      loadAdminDishes()
+    })
+  })
+  $('#d-photo-del')?.addEventListener('click', async e => {
+    e.stopPropagation()
+    try {
+      const data = await api(`/api/admin/photo/clear?id=${encodeURIComponent(dish.id)}`, { method: 'POST' })
+      dish.img = data.dish.img
+      toast('已移除图片')
+      closeModal()
+      loadAdminDishes()
+    } catch (err) { toast(err.message) }
   })
 
   $('#save-dish').addEventListener('click', async () => {
@@ -827,6 +990,29 @@ function showDishModal(dish) {
   }
 }
 
+/* ---------- 注册用户 ---------- */
+async function loadAdminUsers() {
+  try {
+    const data = await api('/api/admin/users')
+    let html = `<div class="card" style="padding:12px 16px">
+      <span class="stat-sub">共 ${data.list.length} 位注册用户（密码不展示）</span>
+    </div>`
+    if (!data.list.length) {
+      html += `<div class="empty">还没有人注册</div>`
+    } else {
+      html += data.list.map(u => `
+        <div class="card" style="display:flex;align-items:center;gap:12px">
+          <div class="user-avatar">${esc(u.nickname.slice(0, 1))}</div>
+          <div style="flex:1">
+            <div class="review-name">${esc(u.nickname)}</div>
+            <div class="stat-sub">注册于 ${new Date(u.createdAt).toLocaleString('zh-CN', { hour12: false })}</div>
+          </div>
+        </div>`).join('')
+    }
+    $('#admin-body').innerHTML = html
+  } catch (e) { toast(e.message) }
+}
+
 /* ---------- 评价管理 ---------- */
 async function loadAdminReviews() {
   try {
@@ -843,6 +1029,26 @@ async function loadAdminReviews() {
 
 /* ---------------- 启动 ---------------- */
 window.closeModal = closeModal  // 供弹层内联按钮使用
+
+// 页面 JS 报错静默上报到服务端日志（fire-and-forget，不打断用户）
+window.onerror = function (msg, src, line, col, err) {
+  try {
+    fetch('/api/log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ msg: `${msg} @ ${src}:${line}:${col}` })
+    }).catch(() => {})
+  } catch (e) { /* 上报失败就算了 */ }
+}
+window.addEventListener('unhandledrejection', e => {
+  try {
+    fetch('/api/log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ msg: 'unhandledrejection: ' + (e.reason?.message || e.reason) })
+    }).catch(() => {})
+  } catch (err) { /* 忽略 */ }
+})
 
 function boot() {
   updateLoginUI()

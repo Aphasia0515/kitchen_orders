@@ -3,13 +3,23 @@
     "adminPassword": "030515jj"
   },
   "tokens": {
-    "t9d0d4b73e8e12c02": 1793967939745,
-    "t4886d2e32c2fd6a9": 1793968439732
+    "t024d71a51b1797a5": 1793985954669,
+    "t1ff67dd774fafac0": 1793985969726,
+    "tfb74c9d616f66323": 1793985974198,
+    "t139c8feb71ba66ef": 1793985999057
   },
   "userTokens": {
     "uf472bafe365b3d4d": {
       "uid": "umw4yh8g5d000",
       "ts": 1793968439727
+    },
+    "uf458d73533bd0331": {
+      "uid": "umw55i2qn0dad",
+      "ts": 1793980217185
+    },
+    "u2a8d21fb6f3a477c": {
+      "uid": "umw4yh8g5d000",
+      "ts": 1793986034045
     }
   },
   "users": [
@@ -18,6 +28,12 @@
       "nickname": "Aphasia",
       "pw": "0a9271c0e1e44ef4678fc88d571fed874ae86f8a8b21d090f46f0ed0d06aeb00",
       "createdAt": 1792227600000
+    },
+    {
+      "id": "umw55i2qn0dad",
+      "nickname": "LJ",
+      "pw": "7e6d52c81e72026930a5c28a4142dde5d940fa3150e9c87db4bf2e517aa3bbd9",
+      "createdAt": 1793980217184
     }
   ],
   "dishes": [
@@ -28,24 +44,25 @@
       "price": 68,
       "category": "荤菜",
       "desc": "",
-      "status": "on",
+      "status": "off",
       "sort": 0
     },
     {
       "id": "d2",
       "name": "土豆排骨炖粉条",
       "emoji": "🍲",
-      "price": 42,
+      "price": 68,
       "category": "荤菜",
       "desc": "排骨、四季豆、土豆、粉条",
       "status": "on",
-      "sort": 1
+      "sort": 1,
+      "img": ""
     },
     {
       "id": "d3",
       "name": "可乐鸡翅",
       "emoji": "🍗",
-      "price": 32,
+      "price": 48,
       "category": "荤菜",
       "desc": "",
       "status": "on",
@@ -90,9 +107,101 @@
       "desc": "虾滑、午餐肉、鸡蛋、隔夜米饭",
       "status": "on",
       "sort": 6
+    },
+    {
+      "id": "dmw55isy1",
+      "name": "尖椒土豆片",
+      "emoji": "🥔",
+      "price": 20,
+      "category": "素材",
+      "desc": "青椒、土豆",
+      "status": "on",
+      "sort": 7
+    },
+    {
+      "id": "dmw55m4vn",
+      "name": "照烧肥牛滑蛋饭",
+      "emoji": "🐔",
+      "price": 28,
+      "category": "荤菜",
+      "desc": "肥牛卷、金针菇、洋葱、免费",
+      "status": "on",
+      "sort": 8
+    },
+    {
+      "id": "dmw58h4py",
+      "name": "米饭",
+      "emoji": "🍚",
+      "price": 3,
+      "category": "主食",
+      "desc": "",
+      "status": "on",
+      "sort": 9
     }
   ],
   "orders": [
+    {
+      "id": "omw58j41cf329",
+      "uid": "umw55i2qn0dad",
+      "nickname": "LJ",
+      "items": [
+        {
+          "dishId": "dmw58h4py",
+          "name": "米饭",
+          "emoji": "🍚",
+          "price": 3,
+          "count": 1
+        },
+        {
+          "dishId": "d5",
+          "name": "番茄炒蛋",
+          "emoji": "🍅",
+          "price": 16,
+          "count": 1
+        },
+        {
+          "dishId": "d3",
+          "name": "可乐鸡翅",
+          "emoji": "🍗",
+          "price": 48,
+          "count": 1
+        }
+      ],
+      "total": 67,
+      "mealDate": "today",
+      "mealTime": "12:30",
+      "guests": 1,
+      "avoid": [],
+      "note": "",
+      "status": "cooking",
+      "rejectReason": "",
+      "createdAt": 1793985304414,
+      "updatedAt": 1793985323272
+    },
+    {
+      "id": "omw55nca25b72",
+      "uid": "umw55i2qn0dad",
+      "nickname": "LJ",
+      "items": [
+        {
+          "dishId": "dmw55m4vn",
+          "name": "照烧肥牛滑蛋饭",
+          "emoji": "🐔",
+          "price": 28,
+          "count": 1
+        }
+      ],
+      "total": 28,
+      "mealDate": "tomorrow",
+      "mealTime": "04:30",
+      "guests": 1,
+      "avoid": [],
+      "note": "不要🌶️",
+      "status": "rejected",
+      "rejectReason": "今天这菜没了，改天再约",
+      "createdAt": 1793980462826,
+      "updatedAt": 1793980517616
+    },
     {
       "id": "oh1",
       "uid": "umw4yh8g5d000",
