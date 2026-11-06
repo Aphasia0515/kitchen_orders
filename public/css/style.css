@@ -91,14 +91,34 @@ body {
 
 .dish-emoji { width: 44px; height: 44px; flex: none; font-size: 28px; text-align: center; line-height: 44px; background: #F5F6F7; border-radius: 10px; overflow: visible; position: relative; }
 .dish-emoji img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: 10px; }
-/* 状态标签（在售/新上线/已下线），排在菜名下一行、材料上一行 */
+/* 状态标签（在售/新上线/已下线）：菜名行内、菜名之后 */
 .tag-new, .tag-on, .tag-off {
   display: inline-block; font-size: 11px; font-weight: 600;
-  border-radius: 4px; padding: 1px 6px; margin-top: 2px; line-height: 16px;
+  border-radius: 4px; padding: 1px 6px; flex: none; line-height: 16px;
 }
 .tag-new { color: var(--orange); background: #FFF3E5; }
 .tag-on  { color: var(--green-deep); background: #F2FBF6; }
 .tag-off { color: var(--muted); background: #F0F1F2; }
+
+/* ---------- 评价卡左滑操作层（仅管理员视角渲染） ---------- */
+.swipe-wrap { position: relative; }
+.swipe-inner {
+  position: relative; z-index: 1;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 16px; margin-bottom: 12px;
+}
+.swipe-wrap.admin .swipe-inner { transition: transform .18s ease; will-change: transform; }
+.swipe-acts {
+  position: absolute; inset: 0; display: flex; justify-content: flex-end;
+  border-radius: var(--radius); overflow: hidden;
+}
+.swipe-act {
+  border: none; cursor: pointer; width: 84px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 600; color: #fff;
+}
+.swipe-act.reply { background: var(--green); }
+.swipe-act.del { background: var(--red); }
 
 /* 新上线徽标贴缩略图右上角（省出行内宽度给菜名） */
 .dish-emoji .badge-new {

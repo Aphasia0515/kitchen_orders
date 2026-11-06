@@ -486,9 +486,9 @@ async function handleAPI(req, res, urlObj) {
     return ok(res, { order: orderView(order) })
   }
 
-  // 订单列表（公开：看单不需要登录，下单/取消/评价才需要；标注下单人昵称）
+  // 订单列表（公开：看单不需要登录，下单/取消/评价才需要；标注下单人昵称；按下单时间倒序）
   if (p === '/api/orders' && req.method === 'GET') {
-    const list = db.orders.slice(0, 50).map(orderView)
+    const list = db.orders.slice().sort((a, b) => b.createdAt - a.createdAt).slice(0, 50).map(orderView)
     return ok(res, { list })
   }
 
@@ -496,7 +496,7 @@ async function handleAPI(req, res, urlObj) {
   if (p === '/api/myorders' && req.method === 'GET') {
     const user = getUser(req)
     if (!user) return fail(res, 401, '登录后才能看订单')
-    const list = db.orders.filter(o => o.uid === user.id).slice(0, 50).map(orderView)
+    const list = db.orders.filter(o => o.uid === user.id).sort((a, b) => b.createdAt - a.createdAt).slice(0, 50).map(orderView)
     return ok(res, { list })
   }
 
@@ -575,7 +575,7 @@ async function handleAPI(req, res, urlObj) {
       const status = q.get('status')
       let list = db.orders
       if (status && status !== 'all') list = list.filter(o => o.status === status)
-      return ok(res, { list: list.slice(0, 100).map(orderView) })
+      return ok(res, { list: list.slice().sort((a, b) => b.createdAt - a.createdAt).slice(0, 100).map(orderView) })
     }
 
     // 修改订单状态：cooking / completed / rejected
@@ -718,6 +718,16 @@ async function handleAPI(req, res, urlObj) {
       r.reply = String(body.reply || '').trim().slice(0, 100)
       saveDB()
       return ok(res, { review: reviewView(r) })
+    }
+
+    // 删除评价（店主）
+    if (p.match(/^\/api\/admin\/review\/[\w-]+$/) && req.method === 'DELETE') {
+      const id = p.split('/')[4]
+      const i = db.reviews.findIndex(x => x.id === id)
+      if (i < 0) return fail(res, 404, '评价不存在')
+      db.reviews.splice(i, 1)
+      saveDB()
+      return ok(res, {})
     }
 
     return fail(res, 404, '接口不存在')

@@ -212,8 +212,7 @@ function renderMenu() {
         ${off ? '' : '<div class="check" data-act="toggle" title="勾选"></div>'}
         <div class="dish-emoji">${thumb}${d.status === 'new' ? '<span class="badge-new">新</span>' : ''}</div>
         <div class="dish-info">
-          <div class="dish-name">${d.rating ? `<span class="dish-rating">★${d.rating.avg}</span>` : ''}<span class="dish-name-txt">${esc(d.name)}</span>${off ? '<span class="badge-off">已下线</span>' : ''}</div>
-          <div class="dish-desc">${d.status === 'new' ? '<span class="tag-new">新上线</span>' : ''}${d.status === 'off' ? '<span class="tag-off">已下线</span>' : '<span class="tag-on">在售</span>'}</div>
+          <div class="dish-name">${d.rating ? `<span class="dish-rating">★${d.rating.avg}</span>` : ''}<span class="dish-name-txt">${esc(d.name)}</span>${d.status === 'new' ? '<span class="tag-new">新上线</span>' : d.status === 'off' ? '<span class="tag-off">已下线</span>' : '<span class="tag-on">在售</span>'}</div>
           ${d.desc ? `<div class="dish-desc">材料：${esc(d.desc)}</div>` : ''}
           <div class="dish-price">${d.price}</div>
         </div>
@@ -369,17 +368,9 @@ const STATUS = {
 
 async function loadMyOrders() {
   try {
-    // 公共订单列表：看单不需要登录；下单/取消/评价才需要
+    // 公共订单列表：看单不需要登录；服务端已按下单时间倒序
     const data = await api('/api/orders')
-    let orders = data.list
-
-    // 已登录：我的单排在最前面，其余人按时间排（自己的单可操作）
-    const me = store.user
-    if (me) {
-      const mine = orders.filter(o => o.uid === me.id)
-      const others = orders.filter(o => o.uid !== me.id)
-      orders = mine.concat(others)
-    }
+    const orders = data.list
 
     if (!orders.length) {
       $('#orders-list').innerHTML = `<div class="empty">还没有订单<br>去「菜单」勾几道菜吧</div>`
@@ -499,25 +490,90 @@ function showReviewModal(order) {
 /* ============================================================
  * 评价
  * ============================================================ */
+/* 评价卡：管理员版左滑露出「回复/删除」操作区（普通访客不渲染滑动层） */
 function reviewCardHTML(r, withReplyBtn) {
+  const admin = !!store.adminToken && withReplyBtn
   return `
-    <div class="card">
-      <div class="review-head">
-        <span class="review-name">${esc(r.nickname)}</span>
-        <span class="review-time">${r.timeText}</span>
+    <div class="swipe-wrap${admin ? ' admin' : ''}">
+      <div class="swipe-inner card">
+        <div class="review-head">
+          <span class="review-name">${esc(r.nickname)}</span>
+          <span class="review-time">${r.timeText}</span>
+        </div>
+        <div style="margin-top:6px">
+          ${r.dishName ? `<span class="review-dish">${esc(r.emoji || '')} ${esc(r.dishName)}</span>` : ''}
+          <span class="stars" style="font-size:15px">${starsHTML(r.rating)}</span>
+        </div>
+        ${r.content ? `<div class="review-content">${esc(r.content)}</div>` : ''}
+        ${r.reply ? `<div class="review-reply">${esc(r.reply)}</div>` : ''}
       </div>
-      <div style="margin-top:6px">
-        ${r.dishName ? `<span class="review-dish">${esc(r.emoji || '')} ${esc(r.dishName)}</span>` : ''}
-        <span class="stars" style="font-size:15px">${starsHTML(r.rating)}</span>
-      </div>
-      ${r.content ? `<div class="review-content">${esc(r.content)}</div>` : ''}
-      ${r.reply ? `<div class="review-reply">${esc(r.reply)}</div>` : ''}
-      ${withReplyBtn ? `
-      <div class="order-actions">
-        <button class="btn btn-ghost btn-sm" data-act="reply" data-id="${r.id}">${r.reply ? '修改回复' : '回复'}</button>
+      ${admin ? `
+      <div class="swipe-acts">
+        <button class="swipe-act reply" data-act="reply" data-id="${r.id}">${r.reply ? '修改回复' : '回复'}</button>
+        <button class="swipe-act del" data-act="del-review" data-id="${r.id}">删除</button>
       </div>` : ''}
     </div>`
 }
+
+/* ---------- 左滑交互（全局委托，管理员视角生效） ---------- */
+function bindSwipe(root) {
+  root.addEventListener('touchstart', e => {
+    const inner = e.target.closest('.swipe-wrap.admin .swipe-inner')
+    if (!inner) return
+    inner.dataset.x0 = e.touches[0].clientX
+    inner.dataset.y0 = e.touches[0].clientY
+    inner.dataset.moved = ''
+  }, { passive: true })
+  root.addEventListener('touchmove', e => {
+    const inner = e.target.closest('.swipe-wrap.admin .swipe-inner')
+    if (!inner || !inner.dataset.x0) return
+    const dx = e.touches[0].clientX - (+inner.dataset.x0)
+    const dy = e.touches[0].clientY - (+inner.dataset.y0)
+    // 纵向滚动优先：竖直位移大于水平才不滑动
+    if (!inner.dataset.moved && Math.abs(dy) > Math.abs(dx)) { inner.dataset.moved = 'no'; return }
+    if (inner.dataset.moved === 'no') return
+    inner.dataset.moved = 'yes'
+    const w = inner.parentElement.querySelector('.swipe-acts').offsetWidth
+    const open = inner.classList.contains('open')
+    let x = dx - (open ? -w : 0)
+    if (x > 0) x = 0
+    if (x < -w) x = -w
+    inner.style.transform = `translateX(${x}px)`
+    inner.style.transition = 'none'
+  }, { passive: true })
+  root.addEventListener('touchend', e => {
+    const inner = e.target.closest('.swipe-wrap.admin .swipe-inner')
+    if (!inner || !inner.dataset.x0) return
+    const w = inner.parentElement.querySelector('.swipe-acts').offsetWidth
+    const dx = e.changedTouches[0].clientX - (+inner.dataset.x0)
+    const open = inner.classList.contains('open')
+    const shouldOpen = open ? (dx > -w / 3) : (dx < -w / 3)   // 已开轻滑回关，未开滑 1/3 开
+    inner.style.transition = 'transform .18s ease'
+    inner.style.transform = shouldOpen ? `translateX(-${w}px)` : 'translateX(0)'
+    inner.classList.toggle('open', shouldOpen)
+    delete inner.dataset.x0
+  })
+  // 点操作按钮/空白处收起
+  root.addEventListener('click', e => {
+    const wrap = e.target.closest('.swipe-wrap.admin')
+    if (!wrap) return
+    const inner = wrap.querySelector('.swipe-inner')
+    const act = e.target.closest('.swipe-act')
+    if (act) {
+      // 滑动按钮点击后收起
+      setTimeout(() => { inner.classList.remove('open'); inner.style.transform = 'translateX(0)' }, 60)
+      return
+    }
+    if (inner.classList.contains('open')) {
+      inner.classList.remove('open')
+      inner.style.transform = 'translateX(0)'
+    }
+  })
+}
+;['#reviews-body', '#admin-body', '#dish-body', '#modal-card'].forEach(sel => {
+  const el = document.querySelector(sel)
+  if (el) bindSwipe(el)
+})
 
 async function loadReviews() {
   try {
@@ -795,6 +851,14 @@ $('#admin-body').addEventListener('click', async e => {
       const reply = prompt(`回复「${r?.dishName || ''}」的评价（留空则清除）：`, r?.reply || '')
       if (reply === null) return
       await api(`/api/admin/review/${id}/reply`, { method: 'POST', body: { reply } })
+      loadAdminReviews()
+    } catch (e2) { toast(e2.message) }
+  }
+  if (act === 'del-review') {
+    if (!confirm('确定删除这条评价？不可恢复。')) return
+    try {
+      await api(`/api/admin/review/${id}`, { method: 'DELETE' })
+      toast('已删除')
       loadAdminReviews()
     } catch (e2) { toast(e2.message) }
   }
