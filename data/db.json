@@ -14,7 +14,8 @@
     "tf664bf25c25f572d": 1793988720064,
     "ted8c4f0851122ead": 1793988738882,
     "t4705d280ffcbfb6c": 1793988740388,
-    "t9e58e12c0cd58ab8": 1793989294127
+    "t9e58e12c0cd58ab8": 1793989294127,
+    "tceb267415fe840c2": 1793989350830
   },
   "userTokens": {
     "uf472bafe365b3d4d": {
@@ -29,9 +30,9 @@
       "uid": "umw4yh8g5d000",
       "ts": 1793986034045
     },
-    "ufaf69aaf59714a4e": {
-      "uid": "umw598vz47989",
-      "ts": 1793986506976
+    "ue9bc934296af9a9c": {
+      "uid": "umw4yh8g5d000",
+      "ts": 1793989487653
     }
   },
   "users": [
@@ -46,12 +47,6 @@
       "nickname": "LJ",
       "pw": "7e6d52c81e72026930a5c28a4142dde5d940fa3150e9c87db4bf2e517aa3bbd9",
       "createdAt": 1793980217184
-    },
-    {
-      "id": "umw598vz47989",
-      "nickname": "测试off973",
-      "pw": "227fed02ee70ed97145bf995ccaa17351d93e7bbb1d4705b98addc38d6a3bc8d",
-      "createdAt": 1793986506976
     }
   ],
   "dishes": [

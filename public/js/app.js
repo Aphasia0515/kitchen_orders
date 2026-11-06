@@ -376,6 +376,7 @@ async function loadMyOrders() {
       $('#orders-list').innerHTML = `<div class="empty">还没有订单<br>去「菜单」勾几道菜吧</div>`
       return
     }
+    const me = store.user   // 登录用户：只对自己的单显示取消/评价按钮
     $('#orders-list').innerHTML = orders.map(o => {
       const [txt, cls] = STATUS[o.status] || ['未知', 'st-cancelled']
       const items = o.items.map(i => `${esc(i.name)} × ${i.count}`).join('<br>')
